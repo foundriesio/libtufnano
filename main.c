@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 
 #include "mbedtls/md.h"
 #include "mbedtls/pem.h"
@@ -10,6 +11,7 @@
 #include "mbedtls/error.h"
 #include "mbedtls/rsa.h"
 #include "mbedtls/sha256.h"
+#include "mbedtls/platform_time.h"
 #include "core_json.h"
 #include "unity.h"
 #include "unity_fixture.h"
@@ -43,6 +45,7 @@
 #define TUF_BIG_CHUNK 1024
 
 /* Error codes */
+/* TODO: Add error codes for all relevant situations */
 #define TUF_SUCCESS 0
 #define TUF_ERROR_ROOT_ROLE_NOT_LOADED -809
 #define TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED -810
@@ -51,6 +54,9 @@
 #define TUF_INVALID_HASH_LENGTH -901
 #define TUF_HASH_VERIFY_ERROR -902
 #define TUF_LENGTH_VERIFY_ERROR -903
+#define TUF_INVALID_DATE_TIME -904
+#define TUF_ERROR_EXPIRED_METADATA -905
+#define TUF_ERROR_BAD_VERSION_NUMBER -905
 
 /*
  * TUF metadata has '.' in field names.
@@ -85,12 +91,13 @@ struct tuf_key {
 struct tuf_metadata {
 	int version;
 	char expires[21];
+	time_t expires_epoch;
 };
 
 struct tuf_role_file {
 	enum tuf_role role;
 	size_t length;
-	unsigned char *hash_sha256[65];
+	unsigned char hash_sha256[65];
 	int version;
 };
 
@@ -110,7 +117,7 @@ struct tuf_snapshot {
 struct tuf_target {
 	int version;
 	char *file_name;
-	unsigned char *hash_sha256[65];
+	unsigned char hash_sha256[65];
 };
 
 struct tuf_targets {
@@ -140,9 +147,36 @@ static struct tuf_root current_root;
 
 unsigned char data_buffer[DATA_BUFFER_LEN];
 
-int timestamp_from_bytes(const char *data)
+time_t datetime_string_to_epoch(const char *s, time_t *epoch)
 {
+	struct tm tm;
+	char *ret;
 
+	/* 2022-09-09T18:13:01Z */
+	ret = strptime(s, "%Y-%m-%dT%H:%M:%SZ", &tm);
+	if (ret == NULL) {
+		log_error("Invalid datetime string %s\n", s);
+		return TUF_INVALID_DATE_TIME;
+	}
+	tm.tm_isdst = 0; /* ignore DST */
+	*epoch = mktime(&tm);
+	if (*epoch < 0)
+		return TUF_INVALID_DATE_TIME;
+	*epoch += tm.tm_gmtoff; /* compensate locale */
+	return TUF_SUCCESS;
+}
+
+time_t get_current_gmt_time()
+{
+	time_t current_time;
+	struct tm *tm;
+
+	time(&current_time);
+	tm = gmtime(&current_time);
+	tm->tm_isdst = 0; /* ignore DST */
+	current_time = mktime(tm);
+	current_time += tm->tm_gmtoff; /* compensate locale */
+	return current_time;
 }
 
 void replace_escape_chars_from_b64_string(unsigned char* s)
@@ -198,6 +232,7 @@ int parse_base_metadata(char *data, int len, struct tuf_metadata *base)
 	char *out_value;
 	size_t out_value_len;
 	JSONStatus_t result;
+	int ret;
 
 	/* Please validate before */
 	result = JSON_Search(data, len, "version", strlen("version"), &out_value, &out_value_len);
@@ -212,7 +247,12 @@ int parse_base_metadata(char *data, int len, struct tuf_metadata *base)
 		return -2;
 	}
 	strncpy(base->expires, out_value, out_value_len);
-	return 0;
+	ret = datetime_string_to_epoch(base->expires, &base->expires_epoch);
+	// log_debug("Converting %.*s => %d\n", out_value_len, out_value, base->expires_epoch);
+	if (ret < 0)
+		return ret;
+
+	return TUF_SUCCESS;
 }
 
 int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
@@ -230,7 +270,6 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 	int role_index = 0;
 	char *out_value_internal;
 	char *out_value_internal_2;
-
 
 	result = JSON_Validate(data, len);
 	if( result != JSONSuccess )
@@ -351,7 +390,6 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 		return -10;
 	}
 	// log_error("JSON is valid\n");
-
 
 	bool foundMatch = false;
 	result = JSON_Search(data, len, "signatures", strlen("signatures"), &outValue, &outValueLength);
@@ -688,7 +726,7 @@ int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, con
 			return get_key_by_id(root, key_id, key);
 		}
 	}
-	log_error("key_id %s for role %d not found\n", key_id, role);
+	// log_error("key_id %s for role %d not found\n", key_id, role);
 
 	return -405;
 }
@@ -714,7 +752,7 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 		struct tuf_key* key;
 		ret = get_public_key_by_id_and_role(root, role, signatures[signature_index].keyid, &key);
 		if (ret != 0) {
-			log_debug("get_public_key_by_id_and_role: not found. verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
+			// log_debug("get_public_key_by_id_and_role: not found. verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
 			continue;
 		}
 		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, strlen(signatures[signature_index].sig), key);
@@ -751,7 +789,7 @@ int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned char **
 int verify_length_and_hashes(const char *data, size_t len, enum tuf_role role)
 {
 	int ret;
-	char *expected_sha256;
+	unsigned char *expected_sha256;
 	size_t expected_length;
 
 	ret = get_expected_sha256_and_length_for_role(role, &expected_sha256, &expected_length);
@@ -980,7 +1018,6 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 	if (ret != 0)
 		return ret;
 
-
 	ret = parse_snapshot_signed_metadata(signed_value, signed_value_len, &new_snapshot);
 	if (ret < 0)
 		return ret;
@@ -1172,8 +1209,9 @@ TEST( Full_LibTufNAno, libTufNano_TestRoot1Load )
 
 
 	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:55:13Z", current_root.base.expires);
-	TEST_ASSERT_EQUAL(1, current_root.base.version);
+	TEST_ASSERT_EQUAL(1665777313, current_root.base.expires_epoch);
 
+	TEST_ASSERT_EQUAL(1, current_root.base.version);
 
 	struct tuf_key *key;
 	ret = get_public_key_for_role(&current_root, ROLE_SNAPSHOT, 0, &key);
@@ -1239,6 +1277,7 @@ TEST( Full_LibTufNAno, libTufNano_TestRoot2Load )
 	TEST_ASSERT_EQUAL_STRING("91f89e098b6c3ee0878b9f1518c2f88624dad3301ed82f1c688310de952fce0c", current_root.roles[ROLE_ROOT].keyids[0]);
 
 	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:56:08Z", current_root.base.expires);
+	TEST_ASSERT_EQUAL(1665777368, current_root.base.expires_epoch);
 	TEST_ASSERT_EQUAL(2, current_root.base.version);
 
 	struct tuf_key *key;
@@ -1309,6 +1348,8 @@ TEST( Full_LibTufNAno, libTufNano_TestTimestampLoad )
 	TEST_ASSERT_EQUAL_STRING("1119a2d55772f0cd7a94cbc916c8a28183f24542fd2e1377cd06be74f0aa328f", current_timestamp.snapshot_file.hash_sha256);
 
 	TEST_ASSERT_EQUAL_STRING("2022-09-09T18:13:01Z", current_timestamp.base.expires);
+	TEST_ASSERT_EQUAL(1662747181, current_timestamp.base.expires_epoch);
+
 	TEST_ASSERT_EQUAL(875, current_timestamp.base.version);
 }
 
@@ -1367,5 +1408,6 @@ int run_full_test( void )
 
 int main()
 {
+	log_debug("get_current_gmt_time=%ld\n", get_current_gmt_time());
 	run_full_test();
 }
