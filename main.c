@@ -24,7 +24,9 @@
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
-#define TUF_FILES_PATH "tests/sample_jsons/rsa/"
+#define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa/"
+
+#define TUF_LOCAL_FILES_PATH "nvs/"
 
 #define log_debug printf
 #define log_info printf
@@ -140,13 +142,110 @@ struct tuf_root {
 };
 
 /* Trusted set */
-static struct tuf_timestamp current_timestamp;
-static struct tuf_targets current_targets;
-static struct tuf_snapshot current_snapshot;
-static struct tuf_root current_root;
+struct tuf_updater {
+	struct tuf_timestamp timestamp;
+	struct tuf_targets targets;
+	struct tuf_snapshot snapshot;
+	struct tuf_root root;
+};
+
+static struct tuf_updater updater;
 
 unsigned char data_buffer[DATA_BUFFER_LEN];
 
+#define _ROOT "root"
+#define _SNAPSHOT "snapshot"
+#define _TARGETS "targets"
+#define _TIMESTAMP "timestamp"
+
+/* Platform specific code */
+
+/* read_file function */
+size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit, const char* base_path)
+{
+	char file_path[MAX_FILE_PATH_LEN];
+	size_t ret;
+
+	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
+	FILE *f = fopen(file_path, "rb");
+	if (f == NULL) {
+		log_error("Unable to open file %s: %s - (%d)", file_path, strerror(errno), errno);
+		return -errno;
+	}
+	ret = fread(output_buffer, 1, limit, f);
+	fclose(f);
+	return ret;
+}
+
+size_t write_file_posix(const char* base_name, char* data, size_t len, const char* base_path)
+{
+	char file_path[MAX_FILE_PATH_LEN];
+	size_t ret;
+
+	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
+	FILE *f = fopen(file_path, "wb");
+	if (f == NULL) {
+		log_error("Unable to open file %s: %s - (%d)", file_path, strerror(errno), errno);
+		return -errno;
+	}
+	ret = fwrite(data, 1, len, f);
+	fclose(f);
+	if (ret < len)
+		return -1;
+
+	return TUF_SUCCESS;
+}
+
+/*
+ * fetch_file, read_local_file and save_local_file will be provided by external application
+ */
+
+char* get_role_name(enum tuf_role role) {
+	switch(role) {
+		case ROLE_ROOT: return _ROOT;
+		case ROLE_SNAPSHOT: return _SNAPSHOT;
+		case ROLE_TARGETS: return _TARGETS;
+		case ROLE_TIMESTAMP: return _TIMESTAMP;
+		default: return "";
+	}
+}
+
+int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
+{
+	/* For now, simulating files download using local copies */
+	*file_size = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_TEST_FILES_PATH);
+	if (file_size < 0)
+		return -1;
+
+	return 0;
+}
+
+int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
+{
+	char *role_name = get_role_name(role);
+	char role_file_name[20];
+
+	snprintf(role_file_name, "%s.json", role_name);
+
+	*file_size = read_file_posix(role_file_name, target_buffer, target_buffer_len, TUF_LOCAL_FILES_PATH);
+	if (*file_size < 0)
+		return *file_size;
+
+	return TUF_SUCCESS;
+}
+
+int save_local_file(enum tuf_role role, const char *data, size_t len)
+{
+	char *role_name = get_role_name(role);
+	char role_file_name[20];
+	int ret;
+
+	snprintf(role_file_name, "%s.json", role_name);
+	ret = write_file_posix(role_file_name, data, len, TUF_LOCAL_FILES_PATH);
+	return ret;
+}
+
+/**/
 time_t datetime_string_to_epoch(const char *s, time_t *epoch)
 {
 	struct tm tm;
@@ -196,36 +295,20 @@ void replace_escape_chars_from_b64_string(unsigned char* s)
 	}
 }
 
-size_t read_file(const char* base_name, char* output_buffer, size_t limit)
-{
-	char file_path[MAX_FILE_PATH_LEN];
-	size_t ret;
-
-	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", TUF_FILES_PATH, base_name);
-	FILE *f = fopen(file_path, "r");
-	if (f == NULL) {
-		log_error("Unable to open file %s: %s - (%d)", file_path, strerror(errno), errno);
-		return -1;
-	}
-	ret = fread(output_buffer, 1, limit, f);
-	fclose(f);
-	return ret;
-}
 
 
 enum tuf_role role_string_to_enum(const char *role_name, size_t role_name_len)
 {
-	if (!strncmp(role_name, "snapshot", role_name_len))
+	if (!strncmp(role_name, _SNAPSHOT, role_name_len))
 		return ROLE_SNAPSHOT;
-	if (!strncmp(role_name, "timestamp", role_name_len))
+	if (!strncmp(role_name, _TIMESTAMP, role_name_len))
 		return ROLE_TIMESTAMP;
-	if (!strncmp(role_name, "targets", role_name_len))
+	if (!strncmp(role_name, _TARGETS, role_name_len))
 		return ROLE_TARGETS;
-	if (!strncmp(role_name, "root", role_name_len))
+	if (!strncmp(role_name, _ROOT, role_name_len))
 		return ROLE_ROOT;
 	return TUF_ROLES_COUNT;
 }
-
 
 int parse_base_metadata(char *data, int len, struct tuf_metadata *base)
 {
@@ -530,14 +613,6 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 //         return new_root
 
 
-int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
-{
-	*file_size = read_file(file_base_name, target_buffer, target_buffer_len);
-	if (file_size < 0)
-		return -1;
-
-	return 0;
-}
 static void print_hex(const char *title, const unsigned char buf[], size_t len)
 {
 	log_debug("%s: ", title);
@@ -771,16 +846,16 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned char **sha256, size_t *length)
 {
 	if (role == ROLE_SNAPSHOT) {
-		if (!current_timestamp.loaded)
+		if (!updater.timestamp.loaded)
 			return TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED;
-		*sha256 = current_timestamp.snapshot_file.hash_sha256;
-		*length = current_timestamp.snapshot_file.length;
+		*sha256 = updater.timestamp.snapshot_file.hash_sha256;
+		*length = updater.timestamp.snapshot_file.length;
 		return TUF_SUCCESS;
 	} else if (role == ROLE_TARGETS) {
-		if (!current_timestamp.loaded)
+		if (!updater.timestamp.loaded)
 			return TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED;
-		*sha256 = current_timestamp.snapshot_file.hash_sha256;
-		*length = current_timestamp.snapshot_file.length;
+		*sha256 = updater.timestamp.snapshot_file.hash_sha256;
+		*length = updater.timestamp.snapshot_file.length;
 		return TUF_SUCCESS;
 	}
 	return -EINVAL;
@@ -795,7 +870,7 @@ int verify_length_and_hashes(const char *data, size_t len, enum tuf_role role)
 	ret = get_expected_sha256_and_length_for_role(role, &expected_sha256, &expected_length);
 	if (ret != TUF_SUCCESS)
 		return ret;
-	
+
 	if (len != expected_length)
 		return TUF_LENGTH_VERIFY_ERROR;
 
@@ -819,7 +894,7 @@ int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf
 	if (ret < 0)
 		return ret;
 
-	if (role != ROLE_ROOT && !current_root.loaded)
+	if (role != ROLE_ROOT && !updater.root.loaded)
 		return TUF_ERROR_ROOT_ROLE_NOT_LOADED;
 
 	if (!check_signature_and_hashes)
@@ -831,9 +906,9 @@ int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf
 			return ret;
 	}
 
-	if (current_root.loaded) {
+	if (updater.root.loaded) {
 		// check signature using current root key
-		ret = verify_data_signature_for_role(*signed_value, *signed_value_len, signatures, role, &current_root);
+		ret = verify_data_signature_for_role(*signed_value, *signed_value_len, signatures, role, &updater.root);
 		// log_debug("Verifying against current root ret = %d\n", ret);
 		if (ret < 0)
 			return ret;
@@ -874,7 +949,7 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 			return ret;
 	}
 
-	memcpy(&current_root, &new_root, sizeof(current_root));
+	memcpy(&updater.root, &new_root, sizeof(updater.root));
 
 	return ret;
 }
@@ -959,7 +1034,7 @@ int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 	if (ret < 0)
 		return ret;
 
-	memcpy(&current_timestamp, &new_timestamp, sizeof(current_timestamp));
+	memcpy(&updater.timestamp, &new_timestamp, sizeof(updater.timestamp));
 	return ret;
 }
 
@@ -1011,7 +1086,7 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 
 	memset(&new_snapshot, 0, sizeof(new_snapshot));
 
-	if (!current_timestamp.loaded)
+	if (!updater.timestamp.loaded)
 		return TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED;
 
 	ret = fetch_role_and_check_signature(file_base_name, ROLE_SNAPSHOT, signatures, &signed_value, &signed_value_len, check_signature);
@@ -1022,8 +1097,32 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 	if (ret < 0)
 		return ret;
 
-	memcpy(&current_snapshot, &new_snapshot, sizeof(current_snapshot));
+	memcpy(&updater.snapshot, &new_snapshot, sizeof(updater.snapshot));
 	return ret;
+}
+
+int load_local_metadata(enum tuf_role role, char *target_buffer, size_t limit)
+{
+	size_t file_size;
+	int ret;
+
+	ret = read_local_file(role, target_buffer, limit, &file_size);
+	return ret;
+}
+
+int load_root()
+{
+	load_local_metadata(ROLE_ROOT, data_buffer, sizeof(data_buffer));
+}
+
+int refresh()
+{
+	memset(&updater, 0, sizeof(updater));
+
+	load_root();
+        // _load_timestamp();
+        // _load_snapshot();
+        // _load_targets(ROLE_TARGETS, ROLE_ROOT);
 }
 
 
@@ -1064,12 +1163,12 @@ int verify_file_signature(const char *file_base_name, const char *signing_key_fi
     	unsigned char signing_public_key_b64[TUF_BIG_CHUNK];
 	size_t file_size, key_file_size;
 
-	file_size = read_file(file_base_name, data_buffer, DATA_BUFFER_LEN);
+	file_size = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH);
 	if (file_size < 0)
 		return -1;
 
 
-	key_file_size = read_file(signing_key_file, signing_public_key_b64, sizeof(signing_public_key_b64));
+	key_file_size = read_file_posix(signing_key_file, signing_public_key_b64, sizeof(signing_public_key_b64), TUF_TEST_FILES_PATH);
 	if (key_file_size < 0)
 		return -20;
 
@@ -1082,12 +1181,12 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
     	unsigned char hash256_b16[TUF_BIG_CHUNK];
 	size_t file_size, hash_file_size;
 
-	file_size = read_file(file_base_name, data_buffer, DATA_BUFFER_LEN);
+	file_size = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH);
 	if (file_size < 0)
 		return -1;
 
 
-	hash_file_size = read_file(sha256_file, hash256_b16, sizeof(hash256_b16));
+	hash_file_size = read_file_posix(sha256_file, hash256_b16, sizeof(hash256_b16), TUF_TEST_FILES_PATH);
 	if (hash_file_size < 0)
 		return -30;
 
@@ -1102,10 +1201,7 @@ TEST_GROUP( Full_LibTufNAno );
 
 TEST_SETUP( Full_LibTufNAno )
 {
-	memset(&current_root, 0, sizeof(current_root));
-	memset(&current_timestamp, 0, sizeof(current_timestamp));
-	memset(&current_targets, 0, sizeof(current_targets));
-	memset(&current_snapshot, 0, sizeof(current_snapshot));
+	memset(&updater, 0, sizeof(updater));
 }
 
 TEST_TEAR_DOWN( Full_LibTufNAno )
@@ -1178,64 +1274,64 @@ TEST( Full_LibTufNAno, libTufNano_TestRoot1Load )
 
 	TEST_ASSERT_EQUAL(0, ret);
 
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", current_root.keys[0].id);
-	TEST_ASSERT_EQUAL_STRING("8e126cc4e3ed6eaf4b638216c856c12ae2d8fa36b0b646bad1c98581a3d8e0df", current_root.keys[1].id);
-	TEST_ASSERT_EQUAL_STRING("9d99928f808ecd9b10ad171312adc80248d2eb3e58082c2aad239f9928c2479b", current_root.keys[2].id);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", current_root.keys[3].id);
+	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.keys[0].id);
+	TEST_ASSERT_EQUAL_STRING("8e126cc4e3ed6eaf4b638216c856c12ae2d8fa36b0b646bad1c98581a3d8e0df", updater.root.keys[1].id);
+	TEST_ASSERT_EQUAL_STRING("9d99928f808ecd9b10ad171312adc80248d2eb3e58082c2aad239f9928c2479b", updater.root.keys[2].id);
+	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.keys[3].id);
 
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[0].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[1].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[2].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[3].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[0].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[1].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[2].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[3].keytype);
 
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[0].keyval);
+				updater.root.keys[0].keyval);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkvZdqvdobQJn/L0wLPYC\\nPmZgAvEnvVRaAe7q6aTPCMVXUXLt45jrr9tpvyhNyy/EfUP1RngToHAQAYieG9Wf\\nzzenGNIg57c9F2vT1ga4KwBTwnvk6qsoVINL4nJwQWRAQJbxJfkcuhWDBc1R+OjF\\nze6eYTm71AIyZiz4UR63FsVgXkM5wnCC82/0XhyKpxVI/y7N1l/wQ8toKbb3wF0K\\nIcsna0HfxvaS17lVA20fNr3KSqfg49j7ReuBNEl4QCZWhQ6xY/5zsYLYeMv4N/Bz\\n/AfyMl2QvQVf3gblem4lXoqNeRbDmVcwaNZahP0goYs0o+lCFDOyiftTazetfiat\\nowIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[1].keyval);
+				updater.root.keys[1].keyval);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr3K10h/xn11pGn8DH+vv\\nQ3gK+NB9oVKQ8+6bh4ovo6tEVc64Wwk3pWM3QkqunMmOHusgCeLo+q97LIMcS/IZ\\nYUE+pHTGdxlnJknyJBNscaF74BPQQ5crIuRdBxfcLOgniq3e48drtIN0dlNpsDcT\\nyBCUJHDV4tALOd6tTEV44bnmGacM/VQZdEG+Q4UUnao/AugZ/T+9DaUbPoBUrlPN\\n6Yn5Al5/y/oR22OrPbcNt2dIylqWxy2h21dJJuIt5EOsIuzFwP1uXr+rimIZtme6\\nSJLS7CMJ9DzeACRLr/F+KMSu8XpCvSVp6nSlao1hCzbSGLhK1jaUe01aOSk6xYKs\\n4wIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[2].keyval);
+				updater.root.keys[2].keyval);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[3].keyval);
+				updater.root.keys[3].keyval);
 
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_SNAPSHOT].threshold);
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_TARGETS].threshold);
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_TIMESTAMP].threshold);
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_ROOT].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_SNAPSHOT].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TARGETS].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TIMESTAMP].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_ROOT].threshold);
 
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", current_root.roles[ROLE_SNAPSHOT].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("9d99928f808ecd9b10ad171312adc80248d2eb3e58082c2aad239f9928c2479b", current_root.roles[ROLE_TARGETS].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", current_root.roles[ROLE_TIMESTAMP].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("8e126cc4e3ed6eaf4b638216c856c12ae2d8fa36b0b646bad1c98581a3d8e0df", current_root.roles[ROLE_ROOT].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.roles[ROLE_SNAPSHOT].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("9d99928f808ecd9b10ad171312adc80248d2eb3e58082c2aad239f9928c2479b", updater.root.roles[ROLE_TARGETS].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.roles[ROLE_TIMESTAMP].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("8e126cc4e3ed6eaf4b638216c856c12ae2d8fa36b0b646bad1c98581a3d8e0df", updater.root.roles[ROLE_ROOT].keyids[0]);
 
 
-	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:55:13Z", current_root.base.expires);
-	TEST_ASSERT_EQUAL(1665777313, current_root.base.expires_epoch);
+	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:55:13Z", updater.root.base.expires);
+	TEST_ASSERT_EQUAL(1665777313, updater.root.base.expires_epoch);
 
-	TEST_ASSERT_EQUAL(1, current_root.base.version);
+	TEST_ASSERT_EQUAL(1, updater.root.base.version);
 
 	struct tuf_key *key;
-	ret = get_public_key_for_role(&current_root, ROLE_SNAPSHOT, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_SNAPSHOT, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
-	ret = get_public_key_for_role(&current_root, ROLE_TARGETS, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_TARGETS, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr3K10h/xn11pGn8DH+vv\\nQ3gK+NB9oVKQ8+6bh4ovo6tEVc64Wwk3pWM3QkqunMmOHusgCeLo+q97LIMcS/IZ\\nYUE+pHTGdxlnJknyJBNscaF74BPQQ5crIuRdBxfcLOgniq3e48drtIN0dlNpsDcT\\nyBCUJHDV4tALOd6tTEV44bnmGacM/VQZdEG+Q4UUnao/AugZ/T+9DaUbPoBUrlPN\\n6Yn5Al5/y/oR22OrPbcNt2dIylqWxy2h21dJJuIt5EOsIuzFwP1uXr+rimIZtme6\\nSJLS7CMJ9DzeACRLr/F+KMSu8XpCvSVp6nSlao1hCzbSGLhK1jaUe01aOSk6xYKs\\n4wIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
 
-	ret = get_public_key_for_role(&current_root, ROLE_TIMESTAMP, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_TIMESTAMP, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
-	ret = get_public_key_for_role(&current_root, ROLE_ROOT, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_ROOT, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkvZdqvdobQJn/L0wLPYC\\nPmZgAvEnvVRaAe7q6aTPCMVXUXLt45jrr9tpvyhNyy/EfUP1RngToHAQAYieG9Wf\\nzzenGNIg57c9F2vT1ga4KwBTwnvk6qsoVINL4nJwQWRAQJbxJfkcuhWDBc1R+OjF\\nze6eYTm71AIyZiz4UR63FsVgXkM5wnCC82/0XhyKpxVI/y7N1l/wQ8toKbb3wF0K\\nIcsna0HfxvaS17lVA20fNr3KSqfg49j7ReuBNEl4QCZWhQ6xY/5zsYLYeMv4N/Bz\\n/AfyMl2QvQVf3gblem4lXoqNeRbDmVcwaNZahP0goYs0o+lCFDOyiftTazetfiat\\nowIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
-	ret = get_public_key_for_role(&current_root, TUF_ROLES_COUNT, 0, &key);
+	ret = get_public_key_for_role(&updater.root, TUF_ROLES_COUNT, 0, &key);
 	TEST_ASSERT_EQUAL(-EINVAL, ret);
 }
 
@@ -1247,62 +1343,62 @@ TEST( Full_LibTufNAno, libTufNano_TestRoot2Load )
 
 	TEST_ASSERT_EQUAL(0, ret);
 
-	TEST_ASSERT_EQUAL_STRING("22e8f6d06eec2e4d50187b74ff21ddbc15326fb56e2d62fd68d10c0cb43b4e7e", current_root.keys[0].id);
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", current_root.keys[1].id);
-	TEST_ASSERT_EQUAL_STRING("91f89e098b6c3ee0878b9f1518c2f88624dad3301ed82f1c688310de952fce0c", current_root.keys[2].id);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", current_root.keys[3].id);
+	TEST_ASSERT_EQUAL_STRING("22e8f6d06eec2e4d50187b74ff21ddbc15326fb56e2d62fd68d10c0cb43b4e7e", updater.root.keys[0].id);
+	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.keys[1].id);
+	TEST_ASSERT_EQUAL_STRING("91f89e098b6c3ee0878b9f1518c2f88624dad3301ed82f1c688310de952fce0c", updater.root.keys[2].id);
+	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.keys[3].id);
 
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[0].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[1].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[2].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", current_root.keys[3].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[0].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[1].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[2].keytype);
+	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[3].keytype);
 
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsac985OY9LESVVHaRJBU\\nV2i1uHCkocMKHihaUEFZbE1dv6EMwBrdM+Z0b2I4A6E6GXmAJE3FVrsXikatleOb\\n7yau+yzv2b4wiK/7OBgz61hPmVsK1k1QVK1f3v0J27Koa6YeVUbpisXCuTQrrA23\\nczuvZlW9tHtJHY3uD03MfwlcENr+gvppDxEHCUzoUvN16IHsnGGGdgL8q4uNelDq\\n3iJCz/ArhEWOkq613sLZbOq83TyYzVgw0lcxPJ1oX+NA4iAC2Pl/uRLUtVawefUc\\nZ5k4DgpouAy2ot9d4oGRjs2LDnmKFwFiMbLgMQf6nIK8PDcso1cA44UwZuC7xSFU\\n6QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[0].keyval);
+				updater.root.keys[0].keyval);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[1].keyval);
+				updater.root.keys[1].keyval);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmu+MksWTfMScaFw4KUBk\\nwKcSeROX8atN4D8r42BHgCsLr4OcXmHzkDVSuCCymJ2SEkgnd6pJxIaWs+HS0Nni\\nu3Gxqv9+6ZUKiMzG89gFkx6kU4RZRd3TcMZOTZaabWhDuVpg6Gkig759qL6B/jNi\\nK1FBAKNGPp3S0rZ+zghdrvrKzUSlVLmvOqTI0PhddkzoNGDO9v6F40n58NKvlOUY\\nCn8wk1n8DGG36CActHIjoAUoQsueBTRNdUy5vNmX4BuEdhUdwDaaJwEkvIvoU3S/\\nwLNlSexU5EJjqWlNeUEWvUJjbxXpSMqAhTtT1MG5En+yqPhH1tGuzK3w6JCS9aou\\nvQIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[2].keyval);
+				updater.root.keys[2].keyval);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				current_root.keys[3].keyval);
+				updater.root.keys[3].keyval);
 
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_SNAPSHOT].threshold);
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_TARGETS].threshold);
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_TIMESTAMP].threshold);
-	TEST_ASSERT_EQUAL(1, current_root.roles[ROLE_ROOT].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_SNAPSHOT].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TARGETS].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TIMESTAMP].threshold);
+	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_ROOT].threshold);
 
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", current_root.roles[ROLE_SNAPSHOT].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("22e8f6d06eec2e4d50187b74ff21ddbc15326fb56e2d62fd68d10c0cb43b4e7e", current_root.roles[ROLE_TARGETS].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", current_root.roles[ROLE_TIMESTAMP].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("91f89e098b6c3ee0878b9f1518c2f88624dad3301ed82f1c688310de952fce0c", current_root.roles[ROLE_ROOT].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.roles[ROLE_SNAPSHOT].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("22e8f6d06eec2e4d50187b74ff21ddbc15326fb56e2d62fd68d10c0cb43b4e7e", updater.root.roles[ROLE_TARGETS].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.roles[ROLE_TIMESTAMP].keyids[0]);
+	TEST_ASSERT_EQUAL_STRING("91f89e098b6c3ee0878b9f1518c2f88624dad3301ed82f1c688310de952fce0c", updater.root.roles[ROLE_ROOT].keyids[0]);
 
-	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:56:08Z", current_root.base.expires);
-	TEST_ASSERT_EQUAL(1665777368, current_root.base.expires_epoch);
-	TEST_ASSERT_EQUAL(2, current_root.base.version);
+	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:56:08Z", updater.root.base.expires);
+	TEST_ASSERT_EQUAL(1665777368, updater.root.base.expires_epoch);
+	TEST_ASSERT_EQUAL(2, updater.root.base.version);
 
 	struct tuf_key *key;
-	ret = get_public_key_for_role(&current_root, ROLE_SNAPSHOT, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_SNAPSHOT, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
-	ret = get_public_key_for_role(&current_root, ROLE_TARGETS, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_TARGETS, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsac985OY9LESVVHaRJBU\\nV2i1uHCkocMKHihaUEFZbE1dv6EMwBrdM+Z0b2I4A6E6GXmAJE3FVrsXikatleOb\\n7yau+yzv2b4wiK/7OBgz61hPmVsK1k1QVK1f3v0J27Koa6YeVUbpisXCuTQrrA23\\nczuvZlW9tHtJHY3uD03MfwlcENr+gvppDxEHCUzoUvN16IHsnGGGdgL8q4uNelDq\\n3iJCz/ArhEWOkq613sLZbOq83TyYzVgw0lcxPJ1oX+NA4iAC2Pl/uRLUtVawefUc\\nZ5k4DgpouAy2ot9d4oGRjs2LDnmKFwFiMbLgMQf6nIK8PDcso1cA44UwZuC7xSFU\\n6QIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
 
-	ret = get_public_key_for_role(&current_root, ROLE_TIMESTAMP, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_TIMESTAMP, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
-	ret = get_public_key_for_role(&current_root, ROLE_ROOT, 0, &key);
+	ret = get_public_key_for_role(&updater.root, ROLE_ROOT, 0, &key);
 	TEST_ASSERT_EQUAL(0, ret);
 	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmu+MksWTfMScaFw4KUBk\\nwKcSeROX8atN4D8r42BHgCsLr4OcXmHzkDVSuCCymJ2SEkgnd6pJxIaWs+HS0Nni\\nu3Gxqv9+6ZUKiMzG89gFkx6kU4RZRd3TcMZOTZaabWhDuVpg6Gkig759qL6B/jNi\\nK1FBAKNGPp3S0rZ+zghdrvrKzUSlVLmvOqTI0PhddkzoNGDO9v6F40n58NKvlOUY\\nCn8wk1n8DGG36CActHIjoAUoQsueBTRNdUy5vNmX4BuEdhUdwDaaJwEkvIvoU3S/\\nwLNlSexU5EJjqWlNeUEWvUJjbxXpSMqAhTtT1MG5En+yqPhH1tGuzK3w6JCS9aou\\nvQIDAQAB\\n-----END PUBLIC KEY-----\\n",
 				key->keyval);
 
-	ret = get_public_key_for_role(&current_root, TUF_ROLES_COUNT, 0, &key);
+	ret = get_public_key_for_role(&updater.root, TUF_ROLES_COUNT, 0, &key);
 	TEST_ASSERT_EQUAL(-EINVAL, ret);
 }
 
@@ -1341,16 +1437,16 @@ TEST( Full_LibTufNAno, libTufNano_TestTimestampLoad )
 	ret = parse_timestamp("timestamp.json", true);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
-	TEST_ASSERT_EQUAL(true, current_timestamp.loaded);
+	TEST_ASSERT_EQUAL(true, updater.timestamp.loaded);
 
-	TEST_ASSERT_EQUAL(820, current_timestamp.snapshot_file.length);
-	TEST_ASSERT_EQUAL(875, current_timestamp.snapshot_file.version);
-	TEST_ASSERT_EQUAL_STRING("1119a2d55772f0cd7a94cbc916c8a28183f24542fd2e1377cd06be74f0aa328f", current_timestamp.snapshot_file.hash_sha256);
+	TEST_ASSERT_EQUAL(820, updater.timestamp.snapshot_file.length);
+	TEST_ASSERT_EQUAL(875, updater.timestamp.snapshot_file.version);
+	TEST_ASSERT_EQUAL_STRING("1119a2d55772f0cd7a94cbc916c8a28183f24542fd2e1377cd06be74f0aa328f", updater.timestamp.snapshot_file.hash_sha256);
 
-	TEST_ASSERT_EQUAL_STRING("2022-09-09T18:13:01Z", current_timestamp.base.expires);
-	TEST_ASSERT_EQUAL(1662747181, current_timestamp.base.expires_epoch);
+	TEST_ASSERT_EQUAL_STRING("2022-09-09T18:13:01Z", updater.timestamp.base.expires);
+	TEST_ASSERT_EQUAL(1662747181, updater.timestamp.base.expires_epoch);
 
-	TEST_ASSERT_EQUAL(875, current_timestamp.base.version);
+	TEST_ASSERT_EQUAL(875, updater.timestamp.base.version);
 }
 
 TEST( Full_LibTufNAno, libTufNano_TestSnapshotLoadWithoutTimestamp )
