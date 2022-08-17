@@ -59,6 +59,10 @@
 #define TUF_INVALID_DATE_TIME -904
 #define TUF_ERROR_EXPIRED_METADATA -905
 #define TUF_ERROR_BAD_VERSION_NUMBER -905
+#define TUF_ERROR_REPOSITORY_ERROR -906
+
+#define TUF_ERROR_SAME_VERSION -910
+#define TUF_ERROR_BUG -1000
 
 #define TUF_HTTP_NOT_FOUND -404
 #define TUF_HTTP_FORBIDDEN -403
@@ -104,6 +108,7 @@ struct tuf_role_file {
 	size_t length;
 	unsigned char hash_sha256[65];
 	int version;
+	bool loaded;
 };
 
 struct tuf_timestamp {
@@ -150,6 +155,7 @@ struct tuf_updater {
 	struct tuf_targets targets;
 	struct tuf_snapshot snapshot;
 	struct tuf_root root;
+	time_t reference_time;
 };
 
 static struct tuf_updater updater;
@@ -158,6 +164,7 @@ unsigned char data_buffer[DATA_BUFFER_LEN];
 
 struct tuf_config {
 	int max_root_rotations;
+	size_t snapshot_max_length;
 };
 static struct tuf_config config;
 
@@ -170,6 +177,7 @@ static struct tuf_config config;
 void load_config()
 {
 	config.max_root_rotations = 10000;
+	config.snapshot_max_length = DATA_BUFFER_LEN;
 }
 
 /* Platform specific code */
@@ -295,6 +303,11 @@ time_t get_current_gmt_time()
 	return current_time;
 }
 
+bool is_expired(time_t expires, time_t reference_time)
+{
+	return expires < reference_time;
+}
+
 void replace_escape_chars_from_b64_string(unsigned char* s)
 {
 	int i;
@@ -354,6 +367,7 @@ int parse_base_metadata(char *data, int len, struct tuf_metadata *base)
 	return TUF_SUCCESS;
 }
 
+/* TODO: verify _type field */
 int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 {
 	JSONStatus_t result;
@@ -977,6 +991,7 @@ JSONStatus_t parse_tuf_file_info(char *data, size_t len, struct tuf_role_file *t
 		return result;
 	}
 	sscanf(outValue, "%d", &target->version);
+	target->loaded = true;
 	return JSONSuccess;
 }
 
@@ -1010,6 +1025,7 @@ int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *t
 	return parse_base_metadata(data, len, &target->base);
 }
 
+/* tests only */
 int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
@@ -1029,6 +1045,55 @@ int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 	ret = parse_timestamp_signed_metadata(signed_value, signed_value_len, &new_timestamp);
 	if (ret < 0)
 		return ret;
+
+	memcpy(&updater.timestamp, &new_timestamp, sizeof(updater.timestamp));
+	return ret;
+}
+
+int update_timestamp(const unsigned char *data, size_t len, bool check_signature)
+{
+	int ret = -1;
+	int signature_index;
+	char *signed_value;
+	int signed_value_len;
+	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_timestamp new_timestamp;
+
+	memset(&new_timestamp, 0, sizeof(new_timestamp));
+
+	ret = split_metadata_and_check_signature(data, len, ROLE_TIMESTAMP, signatures, &signed_value, &signed_value_len, check_signature);
+	if (ret != 0)
+		return ret;
+
+	// Parsing Timestamp
+	ret = parse_timestamp_signed_metadata(signed_value, signed_value_len, &new_timestamp);
+	if (ret < 0)
+		return ret;
+	/*
+	 * If an existing trusted timestamp is updated,
+	 * check for a rollback attack
+	 */
+	if (updater.timestamp.loaded) {
+		/* Prevent rolling back timestamp version */
+		if (new_timestamp.base.version < updater.timestamp.base.version) {
+			log_error("New timestamp version %d must be >= %d", new_timestamp.base.version, updater.timestamp.base.version);
+			return TUF_ERROR_BAD_VERSION_NUMBER;
+		}
+		/* Keep using old timestamp if versions are equal */
+		if (new_timestamp.base.version == updater.timestamp.base.version)
+			return TUF_ERROR_SAME_VERSION;
+
+		/* Prevent rolling back snapshot version */
+		if (new_timestamp.snapshot_file.version < updater.timestamp.snapshot_file.version) {
+			log_error("New snapshot version %d must be >= %d", new_timestamp.snapshot_file.version, updater.timestamp.snapshot_file.version);
+			return TUF_ERROR_BAD_VERSION_NUMBER;
+		}
+	}
+
+        /*
+	 * expiry not checked to allow old timestamp to be used for rollback
+         * protection of new timestamp: expiry is checked in update_snapshot()
+	 */
 
 	memcpy(&updater.timestamp, &new_timestamp, sizeof(updater.timestamp));
 	return ret;
@@ -1071,6 +1136,7 @@ int parse_snapshot_signed_metadata(char *data, int len, struct tuf_snapshot *tar
 	return parse_base_metadata(data, len, &target->base);
 }
 
+/* tests only */
 int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
@@ -1094,6 +1160,103 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 		return ret;
 
 	memcpy(&updater.snapshot, &new_snapshot, sizeof(updater.snapshot));
+	return ret;
+}
+
+
+int check_final_snapshot()
+{
+        // Return error if snapshot is expired or meta version does not match
+
+	if (!updater.snapshot.loaded) {
+		log_error("BUG: !updater.snapshot.loaded\n");
+		return TUF_ERROR_BUG;
+	}
+	if (!updater.timestamp.loaded) {
+		log_error("BUG: !updater.timestamp.loaded\n");
+		return TUF_ERROR_BUG;
+	}
+
+	if (is_expired(updater.snapshot.base.expires_epoch, updater.reference_time)) {
+		log_error("snapshot.json is expired\n");
+		return TUF_ERROR_EXPIRED_METADATA;
+	}
+
+	if (updater.snapshot.base.version != updater.timestamp.snapshot_file.version) {
+		log_error("Expected snapshot version %d, got %d", updater.timestamp.snapshot_file.version, updater.snapshot.base.version);
+		return TUF_ERROR_BAD_VERSION_NUMBER;
+	}
+	return TUF_SUCCESS;
+}
+
+
+
+// TODO: add trusted parameter logic, check if it is required
+int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
+{
+	int ret = -1;
+	int signature_index;
+	char *signed_value;
+	int signed_value_len;
+	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_snapshot new_snapshot;
+
+	memset(&new_snapshot, 0, sizeof(new_snapshot));
+
+	ret = split_metadata_and_check_signature(data, len, ROLE_SNAPSHOT, signatures, &signed_value, &signed_value_len, check_signature);
+	if (ret != 0)
+		return ret;
+
+	ret = parse_snapshot_signed_metadata(signed_value, signed_value_len, &new_snapshot);
+	if (ret < 0)
+		return ret;
+
+        // version not checked against meta version to allow old snapshot to be
+        // used in rollback protection: it is checked when targets is updated
+
+        // # If an existing trusted snapshot is updated, check for rollback attack
+        if (updater.snapshot.loaded) {
+		/* Prevent removal of any metadata in meta */
+		if (updater.snapshot.root_file.loaded && !new_snapshot.root_file.loaded) {
+			log_error("New snapshot is missing info for 'root'\n");
+			return TUF_ERROR_REPOSITORY_ERROR;
+		}
+
+		/* Prevent rollback of root version */
+		if (new_snapshot.root_file.version < updater.snapshot.root_file.version) {
+			log_error("Expected root version %d, got %d\n", updater.snapshot.root_file.version, new_snapshot.root_file.version);
+			return TUF_ERROR_BAD_VERSION_NUMBER;
+		}
+
+		/* Prevent removal of any metadata in meta */
+		if (updater.snapshot.targets_file.loaded && !new_snapshot.targets_file.loaded) {
+			log_error("New snapshot is missing info for 'targets'\n");
+			return TUF_ERROR_REPOSITORY_ERROR;
+		}
+
+		/* Prevent rollback of targets version */
+		if (new_snapshot.targets_file.version < updater.snapshot.targets_file.version) {
+			log_error("Expected targets version >= %d, got %d\n", updater.snapshot.targets_file.version, new_snapshot.targets_file.version);
+			return TUF_ERROR_BAD_VERSION_NUMBER;
+		}
+
+	}
+
+        // expiry not checked to allow old snapshot to be used for rollback
+        // protection of new snapshot: it is checked when targets is updated
+
+        // self._trusted_set[Snapshot.type] = new_snapshot
+        // logger.info("Updated snapshot v%d", new_snapshot.signed.version)
+
+
+	memcpy(&updater.snapshot, &new_snapshot, sizeof(updater.snapshot));
+	log_info("Updated snapshot v%d\n", new_snapshot.targets_file.version);
+
+        // snapshot is loaded, but we raise if it's not valid _final_ snapshot
+        ret = check_final_snapshot();
+	if (ret < 0)
+		return ret;
+
 	return ret;
 }
 
@@ -1165,21 +1328,91 @@ int load_root()
 			return ret;
 	}
 
-	ret = persist_metadata(ROLE_ROOT, data_buffer, file_size);
+	return TUF_SUCCESS;
+}
+
+int load_timestamp()
+{
+	size_t file_size;
+	int ret;
+
+	ret = load_local_metadata(ROLE_TIMESTAMP, data_buffer, sizeof(data_buffer), &file_size);
+	if (ret < 0) {
+		log_debug("local timestamp not found. Proceeding\n");
+	} else {
+		ret = update_timestamp(data_buffer, file_size, true);
+		if (ret < 0)
+			log_debug("local timestamp is not valid. Proceeding\n");
+	}
+
+	ret = download_metadata(ROLE_TIMESTAMP, data_buffer, sizeof(data_buffer), 0, &file_size);
 	if (ret < 0)
 		return ret;
+	ret = update_timestamp(data_buffer, file_size, true);
+	if (ret < 0)
+		return ret;
+	ret = persist_metadata(ROLE_TIMESTAMP, data_buffer, file_size);
+	if (ret < 0)
+		return ret;
+}
 
-	return TUF_SUCCESS;
+int load_snapshot()
+{
+	/* Load local (and if needed remote) snapshot metadata */
+
+	size_t file_size;
+	int ret;
+
+	ret = load_local_metadata(ROLE_SNAPSHOT, data_buffer, sizeof(data_buffer), &file_size);
+	if (ret < 0) {
+		log_debug("local snapshot not found. Proceeding\n");
+	} else {
+		ret = update_snapshot(data_buffer, file_size, true);
+		if (ret < 0)
+			log_debug("local snapshot is not valid. Proceeding\n");
+
+		return TUF_SUCCESS;
+	}
+
+	if (!updater.timestamp.loaded) {
+		log_error("BUG: !updater.timestamp.loaded\n");
+		return TUF_ERROR_BUG;
+	}
+
+	size_t max_length = config.snapshot_max_length;
+	if (updater.timestamp.snapshot_file.length)
+		max_length = updater.timestamp.snapshot_file.length;
+
+	ret = download_metadata(ROLE_SNAPSHOT, data_buffer, max_length, 0, &file_size);
+	if (ret < 0)
+		return ret;
+	ret = update_snapshot(data_buffer, file_size, true);
+	if (ret < 0)
+		return ret;
+	ret = persist_metadata(ROLE_SNAPSHOT, data_buffer, file_size);
+	if (ret < 0)
+		return ret;
 }
 
 int refresh()
 {
+	int ret;
 	memset(&updater, 0, sizeof(updater));
+	updater.reference_time = get_current_gmt_time();
 
-	load_root();
-        // _load_timestamp();
-        // _load_snapshot();
-        // _load_targets(ROLE_TARGETS, ROLE_ROOT);
+	ret = load_root();
+	if (ret < 0)
+		return ret;
+
+	ret = load_timestamp();
+	if (ret < 0)
+		return ret;
+
+	ret = load_snapshot();
+	if (ret < 0)
+		return ret;
+
+	// _load_targets(ROLE_TARGETS, ROLE_ROOT);
 }
 
 
