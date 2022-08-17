@@ -24,9 +24,9 @@
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
-#define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa/"
+#define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa"
 
-#define TUF_LOCAL_FILES_PATH "nvs/"
+#define TUF_LOCAL_FILES_PATH "nvs"
 
 #define log_debug printf
 #define log_info printf
@@ -59,6 +59,9 @@
 #define TUF_INVALID_DATE_TIME -904
 #define TUF_ERROR_EXPIRED_METADATA -905
 #define TUF_ERROR_BAD_VERSION_NUMBER -905
+
+#define TUF_HTTP_NOT_FOUND -404
+#define TUF_HTTP_FORBIDDEN -403
 
 /*
  * TUF metadata has '.' in field names.
@@ -153,15 +156,26 @@ static struct tuf_updater updater;
 
 unsigned char data_buffer[DATA_BUFFER_LEN];
 
+struct tuf_config {
+	int max_root_rotations;
+};
+static struct tuf_config config;
+
+
 #define _ROOT "root"
 #define _SNAPSHOT "snapshot"
 #define _TARGETS "targets"
 #define _TIMESTAMP "timestamp"
 
+void load_config()
+{
+	config.max_root_rotations = 10000;
+}
+
 /* Platform specific code */
 
 /* read_file function */
-size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit, const char* base_path)
+size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit, const char* base_path, size_t *file_size)
 {
 	char file_path[MAX_FILE_PATH_LEN];
 	size_t ret;
@@ -169,12 +183,14 @@ size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit,
 	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
 	FILE *f = fopen(file_path, "rb");
 	if (f == NULL) {
-		log_error("Unable to open file %s: %s - (%d)", file_path, strerror(errno), errno);
+		log_error("Unable to read open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
 		return -errno;
 	}
-	ret = fread(output_buffer, 1, limit, f);
+	*file_size = fread(output_buffer, 1, limit, f);
 	fclose(f);
-	return ret;
+	if (*file_size == 0)
+		return -errno;
+	return TUF_SUCCESS;
 }
 
 size_t write_file_posix(const char* base_name, char* data, size_t len, const char* base_path)
@@ -185,7 +201,7 @@ size_t write_file_posix(const char* base_name, char* data, size_t len, const cha
 	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
 	FILE *f = fopen(file_path, "wb");
 	if (f == NULL) {
-		log_error("Unable to open file %s: %s - (%d)", file_path, strerror(errno), errno);
+		log_error("Unable to write open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
 		return -errno;
 	}
 	ret = fwrite(data, 1, len, f);
@@ -213,10 +229,10 @@ char* get_role_name(enum tuf_role role) {
 int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
 {
 	/* For now, simulating files download using local copies */
-	*file_size = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_TEST_FILES_PATH);
-	if (file_size < 0)
-		return -1;
-
+	int ret = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_TEST_FILES_PATH, file_size);
+	// log_debug("fetch_file ret=%d\n", ret);
+	if (ret < 0)
+		return TUF_HTTP_NOT_FOUND;
 	return 0;
 }
 
@@ -224,23 +240,24 @@ int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t tar
 {
 	char *role_name = get_role_name(role);
 	char role_file_name[20];
+	int ret;
 
-	snprintf(role_file_name, "%s.json", role_name);
+	snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
 
-	*file_size = read_file_posix(role_file_name, target_buffer, target_buffer_len, TUF_LOCAL_FILES_PATH);
-	if (*file_size < 0)
-		return *file_size;
+	ret = read_file_posix(role_file_name, target_buffer, target_buffer_len, TUF_LOCAL_FILES_PATH, file_size);
+	if (ret < 0)
+		return ret;
 
 	return TUF_SUCCESS;
 }
 
-int save_local_file(enum tuf_role role, const char *data, size_t len)
+int write_local_file(enum tuf_role role, const char *data, size_t len)
 {
 	char *role_name = get_role_name(role);
 	char role_file_name[20];
 	int ret;
 
-	snprintf(role_file_name, "%s.json", role_name);
+	snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
 	ret = write_file_posix(role_file_name, data, len, TUF_LOCAL_FILES_PATH);
 	return ret;
 }
@@ -294,7 +311,6 @@ void replace_escape_chars_from_b64_string(unsigned char* s)
 		p++;
 	}
 }
-
 
 
 enum tuf_role role_string_to_enum(const char *role_name, size_t role_name_len)
@@ -354,10 +370,12 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 	char *out_value_internal;
 	char *out_value_internal_2;
 
+	if (len <= 0)
+		return -EINVAL;
 	result = JSON_Validate(data, len);
 	if( result != JSONSuccess )
 	{
-		log_error("split_metadata: Got invalid JSON: %s\n", data);
+		log_error("split_metadata: Got invalid JSON with len=%d: %.*s\n", len, len, data);
 		return -10;
 	}
 
@@ -466,7 +484,9 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 	int signature_index = 0;
 	char *out_value_internal;
 
-	result = JSON_Validate(data, len );
+	result = JSON_Validate(data, len);
+	if (len <= 0)
+		return -EINVAL;
 	if( result != JSONSuccess )
 	{
 		log_error("split_metadata: Got invalid JSON: %s\n", data);
@@ -538,80 +558,6 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 
 	return 0;
 }
-
-//     def _load_root(self) -> None:
-//         """Load remote root metadata.
-
-//         Sequentially load and persist on local disk every newer root metadata
-//         version available on the remote.
-//         """
-
-//         # Update the root role
-//         lower_bound = self._trusted_set.root.signed.version + 1
-//         upper_bound = lower_bound + self.config.max_root_rotations
-
-//         for next_version in range(lower_bound, upper_bound):
-//             try:
-//                 data = self._download_metadata(
-//                     Root.type,
-//                     self.config.root_max_length,
-//                     next_version,
-//                 )
-//                 self._trusted_set.update_root(data)
-//                 self._persist_metadata(Root.type, data)
-
-//             except exceptions.DownloadHTTPError as exception:
-//                 if exception.status_code not in {403, 404}:
-//                     raise
-//                 # 404/403 means current root is newest available
-//                 break
-
-//     # Methods for updating metadata
-//     def update_root(self, data: bytes) -> Metadata[Root]:
-//         """Verifies and loads ``data`` as new root metadata.
-
-//         Note that an expired intermediate root is considered valid: expiry is
-//         only checked for the final root in ``update_timestamp()``.
-
-//         Args:
-//             data: Unverified new root metadata as bytes
-
-//         Raises:
-//             RuntimeError: This function is called after updating timestamp.
-//             RepositoryError: Metadata failed to load or verify. The actual
-//                 error type and content will contain more details.
-
-//         Returns:
-//             Deserialized and verified root ``Metadata`` object
-//         """
-//         if self.timestamp is not None:
-//             raise RuntimeError("Cannot update root after timestamp")
-//         logger.debug("Updating root")
-
-//         new_root = Metadata[Root].from_bytes(data)
-
-//         if new_root.signed.type != Root.type:
-//             raise exceptions.RepositoryError(
-//                 f"Expected 'root', got '{new_root.signed.type}'"
-//             )
-
-//         # Verify that new root is signed by trusted root
-//         self.root.verify_delegate(Root.type, new_root)
-
-//         if new_root.signed.version != self.root.signed.version + 1:
-//             raise exceptions.BadVersionNumberError(
-//                 f"Expected root version {self.root.signed.version + 1}"
-//                 f" instead got version {new_root.signed.version}"
-//             )
-
-//         # Verify that new root is signed by itself
-//         new_root.verify_delegate(Root.type, new_root)
-
-//         self._trusted_set[Root.type] = new_root
-//         logger.info("Updated root v%d", new_root.signed.version)
-
-//         return new_root
-
 
 static void print_hex(const char *title, const unsigned char buf[], size_t len)
 {
@@ -881,16 +827,11 @@ int verify_length_and_hashes(const char *data, size_t len, enum tuf_role role)
 	return TUF_SUCCESS;
 }
 
-int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
+int split_metadata_and_check_signature(const char *data, size_t file_size, enum tuf_role role, struct tuf_signature *signatures, char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
 {
 	int ret = -1;
-	size_t file_size;
 
-	ret = fetch_file(file_base_name, data_buffer, DATA_BUFFER_LEN, &file_size);
-	if (ret != 0)
-		return ret;
-
-	ret = split_metadata(data_buffer, file_size, signatures, TUF_SIGNATURES_MAX_COUNT, signed_value, signed_value_len);
+	ret = split_metadata(data, file_size, signatures, TUF_SIGNATURES_MAX_COUNT, signed_value, signed_value_len);
 	if (ret < 0)
 		return ret;
 
@@ -917,6 +858,25 @@ int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf
 }
 
 
+
+/* tests only */
+int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
+{
+	int ret = -1;
+	size_t file_size;
+
+	ret = fetch_file(file_base_name, data_buffer, DATA_BUFFER_LEN, &file_size);
+	if (ret != 0)
+		return ret;
+
+	ret = split_metadata_and_check_signature(data_buffer, file_size, role, signatures, signed_value, signed_value_len, check_signature_and_hashes);
+	if (ret < 0)
+		return ret;
+	return TUF_SUCCESS;
+}
+
+
+/* tests only */
 int parse_root(const unsigned char *file_base_name, bool check_signature)
 {
 	// TODO: make sure check_signature is false only during unit testing
@@ -937,6 +897,42 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 
 	// Parsing ROOT
 
+	ret = parse_root_signed_metadata(signed_value, signed_value_len, &new_root);
+	if (ret < 0)
+		return ret;
+
+	if (check_signature) {
+		// check signature using current new root key
+		ret = verify_data_signature_for_role(signed_value, signed_value_len, signatures, ROLE_ROOT, &new_root);
+		// log_debug("Verifying against new root ret = %d\n", ret);
+		if (ret < 0)
+			return ret;
+	}
+
+	memcpy(&updater.root, &new_root, sizeof(updater.root));
+
+	return ret;
+}
+
+int update_root(const unsigned char *data, size_t len, bool check_signature)
+{
+	// TODO: make sure check_signature is false only during unit testing
+
+	// size_t file_size;
+	int ret = -1;
+	int signature_index;
+	char *signed_value;
+	int signed_value_len;
+	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_root new_root;
+
+	memset(&new_root, 0, sizeof(new_root));
+
+	ret = split_metadata_and_check_signature(data, len, ROLE_ROOT, signatures, &signed_value, &signed_value_len, check_signature);
+	if (ret != 0)
+		return ret;
+
+	// Parsing ROOT
 	ret = parse_root_signed_metadata(signed_value, signed_value_len, &new_root);
 	if (ret < 0)
 		return ret;
@@ -1101,18 +1097,79 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 	return ret;
 }
 
-int load_local_metadata(enum tuf_role role, char *target_buffer, size_t limit)
+/* TODO: Not sure if read_local_file should receive string or enum tuf_role */
+int load_local_metadata(enum tuf_role role, char *target_buffer, size_t limit, size_t *file_size)
+{
+	int ret;
+
+	ret = read_local_file(role, target_buffer, limit, file_size);
+	return ret;
+}
+
+
+int persist_metadata(enum tuf_role role, char *data, size_t len)
 {
 	size_t file_size;
 	int ret;
 
-	ret = read_local_file(role, target_buffer, limit, &file_size);
+	ret = write_local_file(role, data, len);
+	return ret;
+}
+
+int download_metadata(enum tuf_role role, char *target_buffer, size_t limit, int version, size_t *file_size)
+{
+	char *role_name = get_role_name(role);
+	char role_file_name[20];
+	int ret;
+
+	if (version == 0)
+		snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
+	else
+		snprintf(role_file_name, sizeof(role_file_name), "%d.%s.json", version, role_name);
+	ret = fetch_file(role_file_name, target_buffer, limit, file_size);
 	return ret;
 }
 
 int load_root()
 {
-	load_local_metadata(ROLE_ROOT, data_buffer, sizeof(data_buffer));
+	// Update the root role
+	size_t file_size;
+	int ret;
+
+	ret = load_local_metadata(ROLE_ROOT, data_buffer, sizeof(data_buffer), &file_size);
+	if (ret < 0) {
+		log_debug("local root not found\n");
+		return ret;
+	}
+
+	ret = update_root(data_buffer, file_size, true);
+	if (ret < 0)
+		return ret;
+
+        int lower_bound = updater.root.base.version + 1;
+        int upper_bound = lower_bound + config.max_root_rotations;
+
+        for (int next_version = lower_bound; next_version < upper_bound; next_version++) {
+		ret = download_metadata(ROLE_ROOT, data_buffer, sizeof(data_buffer), next_version, &file_size);
+		if (ret < 0) {
+			if (ret == TUF_HTTP_NOT_FOUND || ret == TUF_HTTP_FORBIDDEN)
+				break;
+			else
+				return ret;
+		}
+		ret = update_root(data_buffer, file_size, true);
+		if (ret < 0)
+			return ret;
+		ret = persist_metadata(ROLE_ROOT, data_buffer, file_size);
+		if (ret < 0)
+			return ret;
+	}
+
+	ret = persist_metadata(ROLE_ROOT, data_buffer, file_size);
+	if (ret < 0)
+		return ret;
+
+	return TUF_SUCCESS;
 }
 
 int refresh()
@@ -1162,14 +1219,15 @@ int verify_file_signature(const char *file_base_name, const char *signing_key_fi
 {
     	unsigned char signing_public_key_b64[TUF_BIG_CHUNK];
 	size_t file_size, key_file_size;
+	int ret;
 
-	file_size = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH);
-	if (file_size < 0)
+	ret = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH, &file_size);
+	if (ret < 0)
 		return -1;
 
 
-	key_file_size = read_file_posix(signing_key_file, signing_public_key_b64, sizeof(signing_public_key_b64), TUF_TEST_FILES_PATH);
-	if (key_file_size < 0)
+	ret = read_file_posix(signing_key_file, signing_public_key_b64, sizeof(signing_public_key_b64), TUF_TEST_FILES_PATH, &key_file_size);
+	if (ret < 0)
 		return -20;
 
 	return verify_data_signature(data_buffer, file_size, signing_public_key_b64, key_file_size);
@@ -1180,14 +1238,15 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 {
     	unsigned char hash256_b16[TUF_BIG_CHUNK];
 	size_t file_size, hash_file_size;
+	int ret;
 
-	file_size = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH);
-	if (file_size < 0)
+	ret = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH, &file_size);
+	if (ret < 0)
 		return -1;
 
 
-	hash_file_size = read_file_posix(sha256_file, hash256_b16, sizeof(hash256_b16), TUF_TEST_FILES_PATH);
-	if (hash_file_size < 0)
+	ret = read_file_posix(sha256_file, hash256_b16, sizeof(hash256_b16), TUF_TEST_FILES_PATH, &hash_file_size);
+	if (ret < 0)
 		return -30;
 
 	log_debug("Verifying hash for %s\n", file_base_name);
@@ -1202,6 +1261,7 @@ TEST_GROUP( Full_LibTufNAno );
 TEST_SETUP( Full_LibTufNAno )
 {
 	memset(&updater, 0, sizeof(updater));
+	load_config();
 }
 
 TEST_TEAR_DOWN( Full_LibTufNAno )
@@ -1223,6 +1283,8 @@ TEST_GROUP_RUNNER( Full_LibTufNAno )
 	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSnapshotLoadWithoutTimestamp );
 	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSnapshotLoad );
 	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSha256 );
+	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestFullLoadRootOperation );
+
 }
 
 TEST( Full_LibTufNAno, libTufNano_TestTimestampSignature )
@@ -1489,6 +1551,14 @@ TEST( Full_LibTufNAno, libTufNano_TestSha256 )
 
 	ret = verify_file_hash("timestamp.json", "targets.json.sha256");
 	TEST_ASSERT_EQUAL(TUF_HASH_VERIFY_ERROR, ret);
+}
+
+TEST( Full_LibTufNAno, libTufNano_TestFullLoadRootOperation )
+{
+	int ret;
+
+	ret = load_root();
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 }
 
 int run_full_test( void )
