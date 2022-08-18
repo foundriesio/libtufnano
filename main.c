@@ -53,6 +53,7 @@
 #define TUF_ERROR_ROOT_ROLE_NOT_LOADED -809
 #define TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED -810
 #define TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED -811
+#define TUF_ERROR_TARGETS_ROLE_LOADED -812
 #define TUF_INVALID_HASH -900
 #define TUF_INVALID_HASH_LENGTH -901
 #define TUF_HASH_VERIFY_ERROR -902
@@ -133,6 +134,7 @@ struct tuf_target {
 
 struct tuf_targets {
 	struct tuf_target selected_target;
+	struct tuf_metadata base;
 	bool loaded;
 };
 
@@ -839,8 +841,8 @@ int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned char **
 	} else if (role == ROLE_TARGETS) {
 		if (!updater.timestamp.loaded)
 			return TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED;
-		*sha256 = updater.timestamp.snapshot_file.hash_sha256;
-		*length = updater.timestamp.snapshot_file.length;
+		*sha256 = updater.snapshot.targets_file.hash_sha256;
+		*length = updater.snapshot.targets_file.length;
 		return TUF_SUCCESS;
 	}
 	return -EINVAL;
@@ -856,8 +858,10 @@ int verify_length_and_hashes(const char *data, size_t len, enum tuf_role role)
 	if (ret != TUF_SUCCESS)
 		return ret;
 
-	if (len != expected_length)
+	if (len != expected_length) {
+		log_error("Expected %s length %ld, got %ld\n", get_role_name(role), expected_length, len);
 		return TUF_LENGTH_VERIFY_ERROR;
+	}
 
 	ret = verify_data_hash_sha256(data, len, expected_sha256, strlen(expected_sha256));
 	if (ret != TUF_SUCCESS)
@@ -1189,6 +1193,62 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 }
 
 
+int parse_snapshot_targets_metadata(char *data, int len, struct tuf_targets *target)
+{
+	JSONStatus_t result;
+	char *outValue, *outSubValue;//, *uri;
+	size_t outValueLength, outSubValueLen;
+
+	memset(target, 0, sizeof(*target));
+	result = JSON_Validate(data, len);
+	if( result != JSONSuccess )
+	{
+		log_error("parse_snapshot_targets_metadata: Got invalid JSON: %s\n", data);
+		return -10;
+	}
+
+	log_error("parse_snapshot_targets_metadata: IMPLEMENT ME\n");
+	// result = JSON_Search(data, len, "meta/root.json", strlen("meta/root.json"), &outValue, &outValueLength);
+	// if (result != JSONSuccess) {
+	// 	log_error("parse_timestamp_signed_metadata: \"meta/root.json\" not found\n");
+	// 	return -2;
+	// }
+
+	// parse_tuf_file_info(outValue, outValueLength, &target->root_file);
+
+
+	// result = JSON_Search(data, len, "meta/targets.json", strlen("meta/targets.json"), &outValue, &outValueLength);
+	// if (result != JSONSuccess) {
+	// 	log_error("parse_timestamp_signed_metadata: \"meta/targets.json\" not found\n");
+	// 	return -2;
+	// }
+
+	// parse_tuf_file_info(outValue, outValueLength, &target->targets_file);
+
+	target->loaded = true;
+
+	return parse_base_metadata(data, len, &target->base);
+}
+
+
+
+int check_final_timestamp()
+{
+        // Return error if timestamp is expired
+	if (!updater.timestamp.loaded) {
+		log_error("BUG: !updater.timestamp.loaded\n");
+		return TUF_ERROR_BUG;
+	}
+
+	if (is_expired(updater.timestamp.base.expires_epoch, updater.reference_time)) {
+		log_error("timestamp.json is expired\n");
+		return TUF_ERROR_EXPIRED_METADATA;
+	}
+
+	return TUF_SUCCESS;
+}
+
+
 int check_final_snapshot()
 {
         // Return error if snapshot is expired or meta version does not match
@@ -1214,8 +1274,6 @@ int check_final_snapshot()
 	return TUF_SUCCESS;
 }
 
-
-
 // TODO: add trusted parameter logic, check if it is required
 int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 {
@@ -1227,6 +1285,23 @@ int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 	struct tuf_snapshot new_snapshot;
 
 	memset(&new_snapshot, 0, sizeof(new_snapshot));
+
+        log_debug("Updating snapshot");
+
+        if (!updater.timestamp.loaded) {
+            log_error("Cannot update snapshot before timestamp");
+	    return TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED;
+	}
+
+        if (updater.targets.loaded) {
+            log_error("Cannot update snapshot after targets");
+	    return TUF_ERROR_TARGETS_ROLE_LOADED;
+	}
+
+        // Snapshot cannot be loaded if final timestamp is expired
+        ret = check_final_timestamp();
+	if (ret < 0)
+		return ret;
 
 	ret = split_metadata_and_check_signature(data, len, ROLE_SNAPSHOT, signatures, &signed_value, &signed_value_len, check_signature);
 	if (ret != 0)
@@ -1283,7 +1358,58 @@ int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 
 int update_targets(const unsigned char *data, size_t len, bool check_signature)
 {
-	log_error("update_targets: IMPLEMENT ME\n");
+	int ret;
+	int signature_index;
+	char *signed_value;
+	int signed_value_len;
+	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_targets new_targets;
+
+	memset(&new_targets, 0, sizeof(new_targets));
+
+	if (!updater.snapshot.loaded) {
+		log_error("Cannot load targets before snapshot");
+		return TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED;
+	}
+
+        // Targets cannot be loaded if final snapshot is expired or its version
+        // does not match meta version in timestamp
+	ret = check_final_snapshot();
+	if (ret < 0)
+		return ret;
+
+
+	if (!updater.root.loaded) {
+		log_error("Cannot load targets before root");
+		return TUF_ERROR_ROOT_ROLE_NOT_LOADED;
+	}
+
+	ret = split_metadata_and_check_signature(data, len, ROLE_TARGETS, signatures, &signed_value, &signed_value_len, check_signature);
+	if (ret != 0)
+		return ret;
+
+	ret = parse_snapshot_targets_metadata(signed_value, signed_value_len, &new_targets);
+	if (ret < 0)
+		return ret;
+
+        // if new_delegate.signed.type != Targets.type:
+        //     raise exceptions.RepositoryError(
+        //         f"Expected 'targets', got '{new_delegate.signed.type}'"
+        //     )
+
+	if (updater.snapshot.targets_file.version != new_targets.base.version) {
+		log_error("Expected targets v%d, got v%d\n", updater.snapshot.targets_file.version, new_targets.base.version);
+		return TUF_ERROR_BAD_VERSION_NUMBER;
+	}
+
+	if (is_expired(new_targets.base.expires_epoch, updater.reference_time))	{
+		log_error("New targets is expired\n");
+		return TUF_ERROR_EXPIRED_METADATA;
+	}
+
+	memcpy(&updater.targets, &new_targets, sizeof(updater.targets));
+        log_debug("Updated targets v%d\n", new_targets.base.version);
+
 	return TUF_SUCCESS;
 }
 
