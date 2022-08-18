@@ -159,6 +159,7 @@ struct tuf_updater {
 	struct tuf_snapshot snapshot;
 	struct tuf_root root;
 	time_t reference_time;
+	void* application_context;
 };
 
 static struct tuf_updater updater;
@@ -194,6 +195,49 @@ char* get_role_name(enum tuf_role role) {
 		case ROLE_TIMESTAMP: return _TIMESTAMP;
 		default: return "";
 	}
+}
+
+/* Application specific code */
+struct aknano_target {
+	int version;
+};
+
+struct aknano_context {
+	struct aknano_target selected_target;
+};
+
+struct aknano_context aknano_context;
+
+int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const char *data, size_t len, void *application_context)
+{
+	JSONStatus_t result;
+	char *outValue, *outSubValue;//, *uri;
+	size_t outValueLength, outSubValueLen;
+	// size_t start = 0, next = 0;
+	// JSONPair_t pair;
+	int ret;
+	struct aknano_context *context = (struct aknano_context*)application_context;
+
+	result = JSON_Search(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength);
+	if (result != JSONSuccess) {
+		log_error("tuf_parse_single_target: \"custom/version\" not found\n");
+		return 0;
+	}
+
+	int version;
+	sscanf(outValue, "%d", &version);
+	if (version > context->selected_target.version)
+		context->selected_target.version = version;
+
+	return 0;
+}
+
+int tuf_targets_processing_done(void *application_context)
+{
+	struct aknano_context *context = (struct aknano_context*)application_context;
+
+	log_debug("tuf_targets_processing_done: highest version %d\n", context->selected_target.version);
+	return 0;
 }
 
 /* Platform specific code */
@@ -1193,37 +1237,40 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 }
 
 
-int parse_snapshot_targets_metadata(char *data, int len, struct tuf_targets *target)
+int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 {
 	JSONStatus_t result;
 	char *outValue, *outSubValue;//, *uri;
 	size_t outValueLength, outSubValueLen;
+	size_t start = 0, next = 0;
+	JSONPair_t pair;
+	int ret;
 
 	memset(target, 0, sizeof(*target));
 	result = JSON_Validate(data, len);
 	if( result != JSONSuccess )
 	{
-		log_error("parse_snapshot_targets_metadata: Got invalid JSON: %s\n", data);
+		log_error("parse_targets_metadata: Got invalid JSON: %s\n", data);
 		return -10;
 	}
 
-	log_error("parse_snapshot_targets_metadata: IMPLEMENT ME\n");
-	// result = JSON_Search(data, len, "meta/root.json", strlen("meta/root.json"), &outValue, &outValueLength);
-	// if (result != JSONSuccess) {
-	// 	log_error("parse_timestamp_signed_metadata: \"meta/root.json\" not found\n");
-	// 	return -2;
-	// }
+	result = JSON_Search(data, len, "targets", strlen("targets"), &outValue, &outValueLength);
+	if (result != JSONSuccess) {
+		log_error("parse_targets_metadata: \"targets\" not found\n");
+		return -2;
+	}
 
-	// parse_tuf_file_info(outValue, outValueLength, &target->root_file);
-
-
-	// result = JSON_Search(data, len, "meta/targets.json", strlen("meta/targets.json"), &outValue, &outValueLength);
-	// if (result != JSONSuccess) {
-	// 	log_error("parse_timestamp_signed_metadata: \"meta/targets.json\" not found\n");
-	// 	return -2;
-	// }
-
-	// parse_tuf_file_info(outValue, outValueLength, &target->targets_file);
+	/* Iterate over each target */
+	while (result == JSONSuccess) {
+		result = JSON_Iterate(outValue, outValueLength, &start, &next, &pair);
+		if (result == JSONSuccess) {
+			ret = tuf_parse_single_target(pair.key, pair.keyLength, pair.value, pair.valueLength, updater.application_context);
+			if (ret < 0) {
+				log_error("Error processing target %.*s\n", pair.keyLength, pair.key);
+				break;
+			}
+		}
+	}
 
 	target->loaded = true;
 
@@ -1388,7 +1435,7 @@ int update_targets(const unsigned char *data, size_t len, bool check_signature)
 	if (ret != 0)
 		return ret;
 
-	ret = parse_snapshot_targets_metadata(signed_value, signed_value_len, &new_targets);
+	ret = parse_targets_metadata(signed_value, signed_value_len, &new_targets);
 	if (ret < 0)
 		return ret;
 
@@ -1598,6 +1645,7 @@ int refresh()
 	int ret;
 	memset(&updater, 0, sizeof(updater));
 	updater.reference_time = get_current_gmt_time();
+	updater.application_context = &aknano_context;
 
 	ret = load_root();
 	if (ret < 0)
@@ -1614,6 +1662,8 @@ int refresh()
 	ret = load_targets();
 	if (ret < 0)
 		return ret;
+
+	tuf_targets_processing_done(updater.application_context);
 
 	return TUF_SUCCESS;
 }
@@ -1679,7 +1729,6 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 	ret = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH, &file_size);
 	if (ret < 0)
 		return -1;
-
 
 	ret = read_file_posix(sha256_file, hash256_b16, sizeof(hash256_b16), TUF_TEST_FILES_PATH, &hash_file_size);
 	if (ret < 0)
