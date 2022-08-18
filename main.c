@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "mbedtls/md.h"
 #include "mbedtls/pem.h"
@@ -165,6 +166,7 @@ unsigned char data_buffer[DATA_BUFFER_LEN];
 struct tuf_config {
 	int max_root_rotations;
 	size_t snapshot_max_length;
+	size_t targets_max_length;
 };
 static struct tuf_config config;
 
@@ -178,6 +180,18 @@ void load_config()
 {
 	config.max_root_rotations = 10000;
 	config.snapshot_max_length = DATA_BUFFER_LEN;
+	config.targets_max_length = DATA_BUFFER_LEN;
+}
+
+
+char* get_role_name(enum tuf_role role) {
+	switch(role) {
+		case ROLE_ROOT: return _ROOT;
+		case ROLE_SNAPSHOT: return _SNAPSHOT;
+		case ROLE_TARGETS: return _TARGETS;
+		case ROLE_TIMESTAMP: return _TIMESTAMP;
+		default: return "";
+	}
 }
 
 /* Platform specific code */
@@ -220,19 +234,30 @@ size_t write_file_posix(const char* base_name, char* data, size_t len, const cha
 	return TUF_SUCCESS;
 }
 
+int remove_local_role_file(enum tuf_role role)
+{
+	char file_path[MAX_FILE_PATH_LEN];
+	size_t ret;
+
+	char *role_name = get_role_name(role);
+	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s.json", TUF_LOCAL_FILES_PATH, role_name);
+
+	return unlink(file_path);
+}
+
+int remove_all_local_role_files()
+{
+	// TODO: Restore original 1.root.json
+	// remove_local_role_file(ROLE_ROOT);
+	remove_local_role_file(ROLE_TIMESTAMP);
+	remove_local_role_file(ROLE_SNAPSHOT);
+	remove_local_role_file(ROLE_TARGETS);
+}
+
 /*
  * fetch_file, read_local_file and save_local_file will be provided by external application
  */
 
-char* get_role_name(enum tuf_role role) {
-	switch(role) {
-		case ROLE_ROOT: return _ROOT;
-		case ROLE_SNAPSHOT: return _SNAPSHOT;
-		case ROLE_TARGETS: return _TARGETS;
-		case ROLE_TIMESTAMP: return _TIMESTAMP;
-		default: return "";
-	}
-}
 
 int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
 {
@@ -1245,10 +1270,6 @@ int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
         // expiry not checked to allow old snapshot to be used for rollback
         // protection of new snapshot: it is checked when targets is updated
 
-        // self._trusted_set[Snapshot.type] = new_snapshot
-        // logger.info("Updated snapshot v%d", new_snapshot.signed.version)
-
-
 	memcpy(&updater.snapshot, &new_snapshot, sizeof(updater.snapshot));
 	log_info("Updated snapshot v%d\n", new_snapshot.targets_file.version);
 
@@ -1259,6 +1280,13 @@ int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 
 	return ret;
 }
+
+int update_targets(const unsigned char *data, size_t len, bool check_signature)
+{
+	log_error("update_targets: IMPLEMENT ME\n");
+	return TUF_SUCCESS;
+}
+
 
 /* TODO: Not sure if read_local_file should receive string or enum tuf_role */
 int load_local_metadata(enum tuf_role role, char *target_buffer, size_t limit, size_t *file_size)
@@ -1370,8 +1398,8 @@ int load_snapshot()
 		ret = update_snapshot(data_buffer, file_size, true);
 		if (ret < 0)
 			log_debug("local snapshot is not valid. Proceeding\n");
-
-		return TUF_SUCCESS;
+		else
+			return TUF_SUCCESS;
 	}
 
 	if (!updater.timestamp.loaded) {
@@ -1394,6 +1422,51 @@ int load_snapshot()
 		return ret;
 }
 
+int load_targets()
+{
+	log_debug("load_targets: begin\n");
+	size_t file_size;
+	int ret;
+
+	// Avoid loading 'role' more than once during "get_targetinfo" -> TODO: does this apply to us?
+	if (updater.targets.loaded)
+		return TUF_SUCCESS;
+
+	ret = load_local_metadata(ROLE_SNAPSHOT, data_buffer, sizeof(data_buffer), &file_size);
+	if (ret < 0) {
+		log_debug("local targets not found. Proceeding\n");
+	} else {
+		ret = update_targets(data_buffer, file_size, true);
+		if (ret < 0) {
+			log_debug("local targets is not valid. Proceeding\n");
+		}
+		else {
+			log_debug("local targets is valid: not downloading new one\n");
+			return TUF_SUCCESS;
+		}
+	}
+
+	if (!updater.snapshot.loaded) {
+		log_error("Snapshot role is not loaded");
+		return TUF_ERROR_BUG;
+	}
+
+	size_t max_length = config.targets_max_length;
+	if (updater.snapshot.targets_file.length)
+		max_length = updater.snapshot.targets_file.length;
+
+	ret = download_metadata(ROLE_TARGETS, data_buffer, max_length, 0, &file_size);
+	if (ret < 0)
+		return ret;
+	ret = update_targets(data_buffer, file_size, true);
+	if (ret < 0)
+		return ret;
+	ret = persist_metadata(ROLE_TARGETS, data_buffer, file_size);
+	if (ret < 0)
+		return ret;
+}
+
+
 int refresh()
 {
 	int ret;
@@ -1412,7 +1485,11 @@ int refresh()
 	if (ret < 0)
 		return ret;
 
-	// _load_targets(ROLE_TARGETS, ROLE_ROOT);
+	ret = load_targets();
+	if (ret < 0)
+		return ret;
+
+	return TUF_SUCCESS;
 }
 
 
@@ -1517,6 +1594,7 @@ TEST_GROUP_RUNNER( Full_LibTufNAno )
 	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSnapshotLoad );
 	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSha256 );
 	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestFullLoadRootOperation );
+	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestRefresh );
 
 }
 
@@ -1792,6 +1870,19 @@ TEST( Full_LibTufNAno, libTufNano_TestFullLoadRootOperation )
 
 	ret = load_root();
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+}
+
+TEST( Full_LibTufNAno, libTufNano_TestRefresh )
+{
+	int ret;
+
+	remove_all_local_role_files();
+
+	ret = refresh();
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+
+	ret = refresh();
+	TEST_ASSERT_EQUAL(TUF_ERROR_SAME_VERSION, ret);
 }
 
 int run_full_test( void )
