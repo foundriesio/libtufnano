@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <time.h>
 #include <unistd.h>
+#include <ctype.h>
 
 #include "mbedtls/md.h"
 #include "mbedtls/pem.h"
@@ -62,6 +63,7 @@
 #define TUF_ERROR_EXPIRED_METADATA -905
 #define TUF_ERROR_BAD_VERSION_NUMBER -905
 #define TUF_ERROR_REPOSITORY_ERROR -906
+#define TUF_ERROR_INVALID_TYPE -907
 
 #define TUF_ERROR_SAME_VERSION -910
 #define TUF_ERROR_BUG -1000
@@ -198,47 +200,19 @@ char* get_role_name(enum tuf_role role) {
 }
 
 /* Application specific code */
-struct aknano_target {
-	int version;
-};
+// struct aknano_target {
+// 	int version;
+// };
 
-struct aknano_context {
-	struct aknano_target selected_target;
-};
+// struct aknano_context {
+// 	struct aknano_target selected_target;
+// };
 
-struct aknano_context aknano_context;
+// struct aknano_context aknano_context;
 
-int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const char *data, size_t len, void *application_context)
-{
-	JSONStatus_t result;
-	char *outValue, *outSubValue;//, *uri;
-	size_t outValueLength, outSubValueLen;
-	// size_t start = 0, next = 0;
-	// JSONPair_t pair;
-	int ret;
-	struct aknano_context *context = (struct aknano_context*)application_context;
-
-	result = JSON_Search(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength);
-	if (result != JSONSuccess) {
-		log_error("tuf_parse_single_target: \"custom/version\" not found\n");
-		return 0;
-	}
-
-	int version;
-	sscanf(outValue, "%d", &version);
-	if (version > context->selected_target.version)
-		context->selected_target.version = version;
-
-	return 0;
-}
-
-int tuf_targets_processing_done(void *application_context)
-{
-	struct aknano_context *context = (struct aknano_context*)application_context;
-
-	log_debug("tuf_targets_processing_done: highest version %d\n", context->selected_target.version);
-	return 0;
-}
+void *tuf_get_application_context();
+int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const char *data, size_t len, void *application_context);
+int tuf_targets_processing_done(void *application_context);
 
 /* Platform specific code */
 
@@ -410,14 +384,28 @@ enum tuf_role role_string_to_enum(const char *role_name, size_t role_name_len)
 	return TUF_ROLES_COUNT;
 }
 
-int parse_base_metadata(char *data, int len, struct tuf_metadata *base)
+int parse_base_metadata(char *data, int len, enum tuf_role role, struct tuf_metadata *base)
 {
 	char *out_value;
 	size_t out_value_len;
 	JSONStatus_t result;
 	int ret;
+	char lower_case_type[12];
 
 	/* Please validate before */
+	result = JSON_Search(data, len, "_type", strlen("_type"), &out_value, &out_value_len);
+	if (result != JSONSuccess) {
+		log_error("parse_root_signed_metadata: \"_type\" not found\n");
+		return TUF_ERROR_INVALID_TYPE;
+	}
+
+	strncpy(lower_case_type, out_value, sizeof(lower_case_type));
+	lower_case_type[0] = tolower(lower_case_type[0]); /* Allowing first char to be upper case */
+	if (strncmp(lower_case_type, get_role_name(role), out_value_len)) {
+		log_error("parse_root_signed_metadata: Expected \"_type\" = %s, got %.*s instead\n", get_role_name(role), out_value_len, out_value);
+		return TUF_ERROR_INVALID_TYPE;
+	}
+
 	result = JSON_Search(data, len, "version", strlen("version"), &out_value, &out_value_len);
 	if (result != JSONSuccess) {
 		log_error("parse_base_metadata: \"version\" not found\n");
@@ -438,7 +426,6 @@ int parse_base_metadata(char *data, int len, struct tuf_metadata *base)
 	return TUF_SUCCESS;
 }
 
-/* TODO: verify _type field */
 int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 {
 	JSONStatus_t result;
@@ -554,7 +541,7 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 		}
 	}
 	target->loaded = true;
-	return parse_base_metadata(data, len, &target->base);
+	return parse_base_metadata(data, len, ROLE_ROOT, &target->base);
 }
 
 int split_metadata(const char *data, int len, struct tuf_signature *signatures, int signatures_max_count, char **signed_value, int *signed_value_len)
@@ -883,7 +870,7 @@ int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned char **
 		*length = updater.timestamp.snapshot_file.length;
 		return TUF_SUCCESS;
 	} else if (role == ROLE_TARGETS) {
-		if (!updater.timestamp.loaded)
+		if (!updater.snapshot.loaded)
 			return TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED;
 		*sha256 = updater.snapshot.targets_file.hash_sha256;
 		*length = updater.snapshot.targets_file.length;
@@ -1095,7 +1082,7 @@ int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *t
 
 	target->loaded = true;
 
-	return parse_base_metadata(data, len, &target->base);
+	return parse_base_metadata(data, len, ROLE_TIMESTAMP, &target->base);
 }
 
 /* tests only */
@@ -1206,7 +1193,7 @@ int parse_snapshot_signed_metadata(char *data, int len, struct tuf_snapshot *tar
 
 	target->loaded = true;
 
-	return parse_base_metadata(data, len, &target->base);
+	return parse_base_metadata(data, len, ROLE_SNAPSHOT, &target->base);
 }
 
 /* tests only */
@@ -1274,7 +1261,7 @@ int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 
 	target->loaded = true;
 
-	return parse_base_metadata(data, len, &target->base);
+	return parse_base_metadata(data, len, ROLE_TARGETS, &target->base);
 }
 
 
@@ -1645,7 +1632,7 @@ int refresh()
 	int ret;
 	memset(&updater, 0, sizeof(updater));
 	updater.reference_time = get_current_gmt_time();
-	updater.application_context = &aknano_context;
+	updater.application_context = tuf_get_application_context();
 
 	ret = load_root();
 	if (ret < 0)
