@@ -49,7 +49,6 @@
 #define TUF_BIG_CHUNK 1024
 
 /* Error codes */
-/* TODO: Add error codes for all relevant situations */
 #define TUF_SUCCESS 0
 #define TUF_ERROR_ROOT_ROLE_NOT_LOADED -809
 #define TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED -810
@@ -64,10 +63,14 @@
 #define TUF_ERROR_BAD_VERSION_NUMBER -905
 #define TUF_ERROR_REPOSITORY_ERROR -906
 #define TUF_ERROR_INVALID_TYPE -907
-
-
+#define TUF_ERROR_FIELD_MISSING -908
+#define TUF_ERROR_INVALID_FIELD_VALUE -909
 #define TUF_ERROR_SAME_VERSION -910
 #define TUF_ERROR_UNSIGNED_METADATA -911
+#define TUF_ERROR_INVALID_METADATA -912
+#define TUF_ERROR_FIELD_COUNT_EXCEEDED -913
+#define TUF_ERROR_KEY_ID_NOT_FOUND -914
+#define TUF_ERROR_KEY_ID_FOR_ROLE_NOT_FOUND -915
 #define TUF_ERROR_BUG -1000
 
 #define TUF_HTTP_NOT_FOUND -404
@@ -411,13 +414,13 @@ int parse_base_metadata(char *data, int len, enum tuf_role role, struct tuf_meta
 	result = JSON_Search(data, len, "version", strlen("version"), &out_value, &out_value_len);
 	if (result != JSONSuccess) {
 		log_error("parse_base_metadata: \"version\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 	sscanf(out_value, "%d", &base->version);
 	result = JSON_Search(data, len, "expires", strlen("expires"), &out_value, &out_value_len);
 	if (result != JSONSuccess) {
 		log_error("parse_base_metadata: \"expires\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 	strncpy(base->expires, out_value, out_value_len);
 	ret = datetime_string_to_epoch(base->expires, &base->expires_epoch);
@@ -450,20 +453,20 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 	if( result != JSONSuccess )
 	{
 		log_error("split_metadata: Got invalid JSON with len=%d: %.*s\n", len, len, data);
-		return -10;
+		return TUF_ERROR_INVALID_METADATA;
 	}
 
 	result = JSON_Search(data, len, "keys", strlen("keys"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_root_signed_metadata: \"keys\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	/* For each key */
 	while (result == JSONSuccess) {
 		if (key_index >= TUF_MAX_KEY_COUNT) {
 			log_error("More keys than allowed (allowed=%d)\n", TUF_MAX_KEY_COUNT);
-			return -3;
+			return TUF_ERROR_FIELD_COUNT_EXCEEDED;
 		}
 
 		struct tuf_key *current_key = &target->keys[key_index];
@@ -476,20 +479,20 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 			result_internal = JSON_Search(pair.value, pair.valueLength, "keytype", strlen("keytype"), &out_value_internal, &value_length_internal);
 			if (result_internal != JSONSuccess) {
 				log_error("'keytype' field not found. result_internal=%d\n", result_internal);
-				return -2;
+				return TUF_ERROR_FIELD_MISSING;
 			}
 			strncpy(current_key->keytype, out_value_internal, value_length_internal);
 
 			result_internal = JSON_Search(pair.value, pair.valueLength, "keyval", strlen("keyval"), &out_value_internal, &value_length_internal);
 			if (result_internal != JSONSuccess) {
 				log_error("'keyval' field not found. result_internal=%d\n", result_internal);
-				return -2;
+				return TUF_ERROR_FIELD_MISSING;
 			}
 
 			result_internal = JSON_Search(out_value_internal, value_length_internal, "public", strlen("public"), &out_value_internal_2, &value_length_internal_2);
 			if (result_internal != JSONSuccess) {
-				log_error("'keyval' field not found. result_internal=%d\n", result_internal);
-				return -2;
+				log_error("'public' field not found. result_internal=%d\n", result_internal);
+				return TUF_ERROR_FIELD_MISSING;
 			}
 			strncpy(current_key->keyval, out_value_internal_2, value_length_internal_2);
 			// replace_escape_chars_from_b64_string(current_key->keyval);
@@ -502,7 +505,7 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 	result = JSON_Search(data, len, "roles", strlen("roles"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_root_signed_metadata: \"roles\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	start = 0;
@@ -516,20 +519,20 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 			enum tuf_role role = role_string_to_enum(pair.key, pair.keyLength);
 			if (role == TUF_ROLES_COUNT) {
 				log_error("Invalid role name \"%.*s\"\n", (int)pair.keyLength, pair.key);
-				return -2;
+				return TUF_ERROR_INVALID_FIELD_VALUE;
 			}
 
 			result_internal = JSON_Search(pair.value, pair.valueLength, "threshold", strlen("threshold"), &out_value_internal, &value_length_internal);
 			if (result_internal != JSONSuccess) {
 				log_error("'threshold' field not found. result_internal=%d\n", result_internal);
-				return -2;
+				return TUF_ERROR_FIELD_MISSING;
 			}
 			sscanf(out_value_internal, "%d", &target->roles[role].threshold);
 
 			result_internal = JSON_Search(pair.value, pair.valueLength, "keyids", strlen("keyids"), &out_value_internal, &value_length_internal);
 			if (result_internal != JSONSuccess) {
 				log_error("'keyids' field not found. result_internal=%d\n", result_internal);
-				return -2;
+				return TUF_ERROR_FIELD_MISSING;
 			}
 
 			key_index = 0;
@@ -564,7 +567,7 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 	if( result != JSONSuccess )
 	{
 		log_error("split_metadata: Got invalid JSON: %s\n", data);
-		return -10;
+		return TUF_ERROR_INVALID_METADATA;
 	}
 	// log_error("JSON is valid\n");
 
@@ -575,7 +578,7 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 		while (result == JSONSuccess) {
 			if (signature_index >= signatures_max_count) {
 				log_error("More signatures than allowed (allowed=%d)\n", signatures_max_count);
-				return -3;
+				return TUF_ERROR_FIELD_COUNT_EXCEEDED;
 			}
 
 			struct tuf_signature *current_signature = &signatures[signature_index];
@@ -586,7 +589,7 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 				result_internal = JSON_Search(pair.value, pair.valueLength, "keyid", strlen("keyid"), &out_value_internal, &value_length_internal);
 				if (result_internal != JSONSuccess) {
 					log_error("'keyid' field not found. result_internal=%d\n", result_internal);
-					return -2;
+					return TUF_ERROR_FIELD_MISSING;
 				} else {
 					strncpy(current_signature->keyid, out_value_internal, value_length_internal);
 				}
@@ -594,7 +597,7 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 				result_internal = JSON_Search(pair.value, pair.valueLength, "method", strlen("method"), &out_value_internal, &value_length_internal);
 				if (result_internal != JSONSuccess) {
 					log_error("'method' field not found\n");
-					return -2;
+					return TUF_ERROR_FIELD_MISSING;
 				} else {
 					if (strncmp(out_value_internal, "rsassa-pss-sha256", value_length_internal) != 0) {
 						log_error("unsupported signature method \"%.*s\". Skipping\n", (int)value_length_internal, out_value_internal);
@@ -606,7 +609,7 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 				result_internal = JSON_Search(pair.value, pair.valueLength, "sig", strlen("sig"), &out_value_internal, &value_length_internal);
 				if (result_internal != JSONSuccess) {
 					log_error("'sig' field not found\n");
-					return -2;
+					return TUF_ERROR_FIELD_MISSING;
 				} else {
 					strncpy(current_signature->sig, out_value_internal, value_length_internal);
 				}
@@ -616,7 +619,7 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 		}
 	} else {
 		log_error("handle_json_data: signatures not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	result = JSON_Search(data, len, "signed", strlen("signed"), &outValue, &outValueLength);
@@ -625,7 +628,7 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 		*signed_value_len = outValueLength;
 	} else {
 		log_error("handle_json_data: signed not found");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	// log_debug("\nsplit_metadata, signed_value_len=%d   value=%.*s\n", *signed_value_len, *signed_value_len, *signed_value);
@@ -775,21 +778,8 @@ int get_key_by_id(struct tuf_root *root, const char* key_id, struct tuf_key **ke
 			return 0;
 		}
 	}
-	return -404;
+	return TUF_ERROR_KEY_ID_NOT_FOUND;
 }
-
-// int get_key_by_id_old(struct tuf_root *root, const char* key_id, char **key)
-// {
-// 	int i;
-
-// 	for (i=0; i<TUF_MAX_KEY_COUNT; i++) {
-// 		if (!strcmp(root->keys[i].id, key_id)) {
-// 			*key = root->keys[i].keyval;
-// 			return 0;
-// 		}
-// 	}
-// 	return -404;
-// }
 
 int get_public_key_for_role(struct tuf_root *root, enum tuf_role role, int key_index, struct tuf_key **key)
 {
@@ -823,7 +813,7 @@ int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, con
 	}
 	// log_error("key_id %s for role %d not found\n", key_id, role);
 
-	return -405;
+	return TUF_ERROR_KEY_ID_FOR_ROLE_NOT_FOUND;
 }
 
 int verify_data_signature_for_role(const char *signed_value, size_t signed_value_len, struct tuf_signature *signatures, enum tuf_role role, struct tuf_root *root)
@@ -1033,7 +1023,7 @@ int update_root(const unsigned char *data, size_t len, bool check_signature)
 }
 
 
-JSONStatus_t parse_tuf_file_info(char *data, size_t len, struct tuf_role_file *target)
+int parse_tuf_file_info(char *data, size_t len, struct tuf_role_file *target)
 {
 	JSONStatus_t result;
 	char *outValue;
@@ -1042,25 +1032,25 @@ JSONStatus_t parse_tuf_file_info(char *data, size_t len, struct tuf_role_file *t
 	result = JSON_Search(data, len, "hashes/sha256", strlen("hashes/sha256"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_timestamp_signed_metadata: \"hashes/sha256\" not found\n");
-		return result;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 	strncpy((char*)target->hash_sha256, outValue, outValueLength);
 
 	result = JSON_Search(data, len, "length", strlen("length"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_timestamp_signed_metadata: \"length\" not found\n");
-		return result;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 	sscanf(outValue, "%ld", &target->length);
 
 	result = JSON_Search(data, len, "version", strlen("version"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_timestamp_signed_metadata: \"version\" not found\n");
-		return result;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 	sscanf(outValue, "%d", &target->version);
 	target->loaded = true;
-	return JSONSuccess;
+	return TUF_SUCCESS;
 }
 
 int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *target)
@@ -1068,24 +1058,25 @@ int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *t
 	JSONStatus_t result;
 	char *outValue, *outSubValue;//, *uri;
 	size_t outValueLength, outSubValueLen;
+	int ret;
 
 	memset(target, 0, sizeof(*target));
 	result = JSON_Validate(data, len);
 	if( result != JSONSuccess )
 	{
 		log_error("parse_timestamp_signed_metadata: Got invalid JSON: %s\n", data);
-		return -10;
+		return TUF_ERROR_INVALID_METADATA;
 	}
 
 	result = JSON_Search(data, len, "meta/snapshot.json", strlen("meta/snapshot.json"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_timestamp_signed_metadata: \"meta/snapshot.json\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
-	result = parse_tuf_file_info(outValue, outValueLength, &target->snapshot_file);
-	if (result != JSONSuccess) {
-		return -2;
+	ret = parse_tuf_file_info(outValue, outValueLength, &target->snapshot_file);
+	if (ret < 0) {
+		return ret;
 	}
 
 	target->loaded = true;
@@ -1179,13 +1170,13 @@ int parse_snapshot_signed_metadata(char *data, int len, struct tuf_snapshot *tar
 	if( result != JSONSuccess )
 	{
 		log_error("parse_snapshot_signed_metadata: Got invalid JSON: %s\n", data);
-		return -10;
+		return TUF_ERROR_INVALID_METADATA;
 	}
 
 	result = JSON_Search(data, len, "meta/root.json", strlen("meta/root.json"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_timestamp_signed_metadata: \"meta/root.json\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	parse_tuf_file_info(outValue, outValueLength, &target->root_file);
@@ -1194,7 +1185,7 @@ int parse_snapshot_signed_metadata(char *data, int len, struct tuf_snapshot *tar
 	result = JSON_Search(data, len, "meta/targets.json", strlen("meta/targets.json"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_timestamp_signed_metadata: \"meta/targets.json\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	parse_tuf_file_info(outValue, outValueLength, &target->targets_file);
@@ -1246,13 +1237,13 @@ int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 	if( result != JSONSuccess )
 	{
 		log_error("parse_targets_metadata: Got invalid JSON: %s\n", data);
-		return -10;
+		return TUF_ERROR_INVALID_METADATA;
 	}
 
 	result = JSON_Search(data, len, "targets", strlen("targets"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("parse_targets_metadata: \"targets\" not found\n");
-		return -2;
+		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	/* Iterate over each target */
