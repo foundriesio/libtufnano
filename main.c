@@ -65,7 +65,9 @@
 #define TUF_ERROR_REPOSITORY_ERROR -906
 #define TUF_ERROR_INVALID_TYPE -907
 
+
 #define TUF_ERROR_SAME_VERSION -910
+#define TUF_ERROR_UNSIGNED_METADATA -911
 #define TUF_ERROR_BUG -1000
 
 #define TUF_HTTP_NOT_FOUND -404
@@ -859,8 +861,11 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 			valid_signatures_count++;
 		}
 	}
-	/* No valid signature found */
-	return ret;
+
+	if (valid_signatures_count < threshold)
+		return TUF_ERROR_UNSIGNED_METADATA;
+	else
+		return TUF_SUCCESS;
 }
 
 
