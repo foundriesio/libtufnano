@@ -826,8 +826,10 @@ int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, con
 
 int verify_data_signature_for_role(const char *signed_value, size_t signed_value_len, struct tuf_signature *signatures, enum tuf_role role, struct tuf_root *root)
 {
-	int ret = -1;
+	int ret;
 	int signature_index;
+	int threshold;
+	int valid_signatures_count = 0;
 	// char *signed_value;
 	// int signed_value_len;
 	// struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
@@ -836,7 +838,8 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 	// if (ret < 0)
 	// 	return ret;
 
-	for (signature_index=0; signature_index < TUF_SIGNATURES_MAX_COUNT; signature_index++)
+	threshold = updater.root.roles[role].threshold;
+	for (signature_index=0; signature_index < TUF_SIGNATURES_MAX_COUNT && valid_signatures_count < threshold; signature_index++)
 	{
 		// log_debug("verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
 		if (!signatures[signature_index].set)
@@ -853,7 +856,7 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 		if (!ret) {
 			/* Found valid signature */
 			// log_debug("found valid signature. verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
-			return ret;
+			valid_signatures_count++;
 		}
 	}
 	/* No valid signature found */
