@@ -214,7 +214,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	result = JSON_Search(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength);
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.version=%.*s", outValueLength, outValue));
-		sscanf(outValue, "%lu", &version);
+		sscanf(outValue, "%u", &version);
 		if (version <= aknano_context->selected_target.version) {
 			return 0;
 		}

@@ -2,9 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <time.h>
 #include <unistd.h>
 #include <ctype.h>
+#define __USE_XOPEN
+#define _GNU_SOURCE
+#include <time.h>
 
 #include "mbedtls/md.h"
 #include "mbedtls/pem.h"
@@ -15,66 +17,10 @@
 #include "mbedtls/sha256.h"
 #include "mbedtls/platform_time.h"
 #include "core_json.h"
-#include "unity.h"
-#include "unity_fixture.h"
 
-#define ANSI_COLOR_RED     "\x1b[31m"
-#define ANSI_COLOR_GREEN   "\x1b[32m"
-#define ANSI_COLOR_YELLOW  "\x1b[33m"
-#define ANSI_COLOR_BLUE    "\x1b[34m"
-#define ANSI_COLOR_MAGENTA "\x1b[35m"
-#define ANSI_COLOR_CYAN    "\x1b[36m"
-#define ANSI_COLOR_RESET   "\x1b[0m"
+#include "libtufnano.h"
+#include "libtufnano_internal.h"
 
-#define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa"
-
-#define TUF_LOCAL_FILES_PATH "nvs"
-
-#define log_debug printf
-#define log_info printf
-#define log_error printf
-
-/* Fields size limits */
-#define MAX_FILE_PATH_LEN 100
-#define DATA_BUFFER_LEN 10 * 1024
-#define TUF_SIGNATURES_MAX_COUNT 10
-#define TUF_SIGNATURE_MAX_LEN 512
-#define TUF_SIGNATURE_METHOD_NAME_MAX_LEN 20
-#define TUF_KEY_ID_MAX_LEN 65
-#define TUF_MAX_KEY_COUNT 10
-#define TUF_KEYIDS_PER_ROLE_MAX_COUNT 5
-
-/* TODO: adjust proper size limits on fields */
-/* TODO: save space in memory by keeping decoded bytes instead of base64 string */
-#define TUF_BIG_CHUNK 1024
-
-/* Error codes */
-#define TUF_SUCCESS 0
-#define TUF_ERROR_ROOT_ROLE_NOT_LOADED -809
-#define TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED -810
-#define TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED -811
-#define TUF_ERROR_TARGETS_ROLE_LOADED -812
-#define TUF_INVALID_HASH -900
-#define TUF_INVALID_HASH_LENGTH -901
-#define TUF_HASH_VERIFY_ERROR -902
-#define TUF_LENGTH_VERIFY_ERROR -903
-#define TUF_INVALID_DATE_TIME -904
-#define TUF_ERROR_EXPIRED_METADATA -905
-#define TUF_ERROR_BAD_VERSION_NUMBER -905
-#define TUF_ERROR_REPOSITORY_ERROR -906
-#define TUF_ERROR_INVALID_TYPE -907
-#define TUF_ERROR_FIELD_MISSING -908
-#define TUF_ERROR_INVALID_FIELD_VALUE -909
-#define TUF_ERROR_SAME_VERSION -910
-#define TUF_ERROR_UNSIGNED_METADATA -911
-#define TUF_ERROR_INVALID_METADATA -912
-#define TUF_ERROR_FIELD_COUNT_EXCEEDED -913
-#define TUF_ERROR_KEY_ID_NOT_FOUND -914
-#define TUF_ERROR_KEY_ID_FOR_ROLE_NOT_FOUND -915
-#define TUF_ERROR_BUG -1000
-
-#define TUF_HTTP_NOT_FOUND -404
-#define TUF_HTTP_FORBIDDEN -403
 
 /*
  * TUF metadata has '.' in field names.
@@ -83,108 +29,8 @@
  *  #define JSON_QUERY_KEY_SEPARATOR '/'
  */
 
-/* Data types */
-
-enum tuf_role {
-	ROLE_ROOT = 0,
-	ROLE_TIMESTAMP,
-	ROLE_SNAPSHOT,
-	ROLE_TARGETS,
-	TUF_ROLES_COUNT
-};
-
-struct tuf_signature {
-	char keyid[TUF_KEY_ID_MAX_LEN];
-	char method[TUF_SIGNATURE_METHOD_NAME_MAX_LEN];
-	unsigned char sig[TUF_SIGNATURE_MAX_LEN];
-	bool set;
-};
-
-struct tuf_key {
-	char id[TUF_BIG_CHUNK];
-	char keyval[TUF_BIG_CHUNK];
-	char keytype[TUF_BIG_CHUNK];
-};
-
-struct tuf_metadata {
-	int version;
-	char expires[21];
-	time_t expires_epoch;
-};
-
-struct tuf_role_file {
-	enum tuf_role role;
-	size_t length;
-	unsigned char hash_sha256[65];
-	int version;
-	bool loaded;
-};
-
-struct tuf_timestamp {
-	struct tuf_role_file snapshot_file;
-	struct tuf_metadata base;
-	bool loaded;
-};
-
-struct tuf_snapshot {
-	struct tuf_role_file root_file;
-	struct tuf_role_file targets_file;
-	struct tuf_metadata base;
-	bool loaded;
-};
-
-struct tuf_target {
-	int version;
-	char *file_name;
-	unsigned char hash_sha256[65];
-};
-
-struct tuf_targets {
-	struct tuf_target selected_target;
-	struct tuf_metadata base;
-	bool loaded;
-};
-
-
-struct tuf_root_role {
-	char keyids[TUF_KEYIDS_PER_ROLE_MAX_COUNT][TUF_KEY_ID_MAX_LEN];
-	int threshold;
-};
-
-struct tuf_root {
-	struct tuf_key keys[TUF_MAX_KEY_COUNT];
-	size_t keys_count;
-	struct tuf_root_role roles[TUF_ROLES_COUNT];
-	struct tuf_metadata base;
-	bool loaded;
-};
-
-/* Trusted set */
-struct tuf_updater {
-	struct tuf_timestamp timestamp;
-	struct tuf_targets targets;
-	struct tuf_snapshot snapshot;
-	struct tuf_root root;
-	time_t reference_time;
-	void* application_context;
-};
-
-static struct tuf_updater updater;
-
-unsigned char data_buffer[DATA_BUFFER_LEN];
-
-struct tuf_config {
-	int max_root_rotations;
-	size_t snapshot_max_length;
-	size_t targets_max_length;
-};
+struct tuf_updater updater;
 static struct tuf_config config;
-
-
-#define _ROOT "root"
-#define _SNAPSHOT "snapshot"
-#define _TARGETS "targets"
-#define _TIMESTAMP "timestamp"
 
 void load_config()
 {
@@ -193,8 +39,7 @@ void load_config()
 	config.targets_max_length = DATA_BUFFER_LEN;
 }
 
-
-char* get_role_name(enum tuf_role role) {
+const char* get_role_name(enum tuf_role role) {
 	switch(role) {
 		case ROLE_ROOT: return _ROOT;
 		case ROLE_SNAPSHOT: return _SNAPSHOT;
@@ -204,63 +49,6 @@ char* get_role_name(enum tuf_role role) {
 	}
 }
 
-/* Application specific code */
-
-void *tuf_get_application_context();
-int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const char *data, size_t len, void *application_context);
-int tuf_targets_processing_done(void *application_context);
-
-/* Platform specific code */
-
-/* read_file function */
-size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit, const char* base_path, size_t *file_size)
-{
-	char file_path[MAX_FILE_PATH_LEN];
-	size_t ret;
-
-	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
-	FILE *f = fopen(file_path, "rb");
-	if (f == NULL) {
-		log_error("Unable to read open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
-		return -errno;
-	}
-	*file_size = fread(output_buffer, 1, limit, f);
-	fclose(f);
-	if (*file_size == 0)
-		return -errno;
-	return TUF_SUCCESS;
-}
-
-size_t write_file_posix(const char* base_name, char* data, size_t len, const char* base_path)
-{
-	char file_path[MAX_FILE_PATH_LEN];
-	size_t ret;
-
-	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
-	FILE *f = fopen(file_path, "wb");
-	if (f == NULL) {
-		log_error("Unable to write open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
-		return -errno;
-	}
-	ret = fwrite(data, 1, len, f);
-	fclose(f);
-	if (ret < len)
-		return -1;
-
-	return TUF_SUCCESS;
-}
-
-int remove_local_role_file(enum tuf_role role)
-{
-	char file_path[MAX_FILE_PATH_LEN];
-	size_t ret;
-
-	char *role_name = get_role_name(role);
-	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s.json", TUF_LOCAL_FILES_PATH, role_name);
-
-	return unlink(file_path);
-}
-
 int remove_all_local_role_files()
 {
 	// TODO: Restore original 1.root.json
@@ -268,47 +56,6 @@ int remove_all_local_role_files()
 	remove_local_role_file(ROLE_TIMESTAMP);
 	remove_local_role_file(ROLE_SNAPSHOT);
 	remove_local_role_file(ROLE_TARGETS);
-}
-
-/*
- * fetch_file, read_local_file and save_local_file will be provided by external application
- */
-
-
-int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
-{
-	/* For now, simulating files download using local copies */
-	int ret = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_TEST_FILES_PATH, file_size);
-	// log_debug("fetch_file ret=%d\n", ret);
-	if (ret < 0)
-		return TUF_HTTP_NOT_FOUND;
-	return 0;
-}
-
-int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
-{
-	char *role_name = get_role_name(role);
-	char role_file_name[20];
-	int ret;
-
-	snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
-
-	ret = read_file_posix(role_file_name, target_buffer, target_buffer_len, TUF_LOCAL_FILES_PATH, file_size);
-	if (ret < 0)
-		return ret;
-
-	return TUF_SUCCESS;
-}
-
-int write_local_file(enum tuf_role role, const char *data, size_t len)
-{
-	char *role_name = get_role_name(role);
-	char role_file_name[20];
-	int ret;
-
-	snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
-	ret = write_file_posix(role_file_name, data, len, TUF_LOCAL_FILES_PATH);
-	return ret;
 }
 
 /**/
@@ -329,19 +76,6 @@ time_t datetime_string_to_epoch(const char *s, time_t *epoch)
 		return TUF_INVALID_DATE_TIME;
 	*epoch += tm.tm_gmtoff; /* compensate locale */
 	return TUF_SUCCESS;
-}
-
-time_t get_current_gmt_time()
-{
-	time_t current_time;
-	struct tm *tm;
-
-	time(&current_time);
-	tm = gmtime(&current_time);
-	tm->tm_isdst = 0; /* ignore DST */
-	current_time = mktime(tm);
-	current_time += tm->tm_gmtoff; /* compensate locale */
-	return current_time;
 }
 
 bool is_expired(time_t expires, time_t reference_time)
@@ -365,7 +99,6 @@ void replace_escape_chars_from_b64_string(unsigned char* s)
 		p++;
 	}
 }
-
 
 enum tuf_role role_string_to_enum(const char *role_name, size_t role_name_len)
 {
@@ -398,7 +131,7 @@ int parse_base_metadata(char *data, int len, enum tuf_role role, struct tuf_meta
 	strncpy(lower_case_type, out_value, sizeof(lower_case_type));
 	lower_case_type[0] = tolower(lower_case_type[0]); /* Allowing first char to be upper case */
 	if (strncmp(lower_case_type, get_role_name(role), out_value_len)) {
-		log_error("parse_root_signed_metadata: Expected \"_type\" = %s, got %.*s instead\n", get_role_name(role), out_value_len, out_value);
+		log_error("parse_root_signed_metadata: Expected \"_type\" = %s, got %.*s instead\n", get_role_name(role), (int)out_value_len, out_value);
 		return TUF_ERROR_INVALID_TYPE;
 	}
 
@@ -758,7 +491,6 @@ exit:
 	return( exit_code );
 }
 
-
 int get_key_by_id(struct tuf_root *root, const char* key_id, struct tuf_key **key)
 {
 	int i;
@@ -783,7 +515,6 @@ int get_public_key_for_role(struct tuf_root *root, enum tuf_role role, int key_i
 	char *keyid = root->roles[role].keyids[key_index];
 	return get_key_by_id(root, keyid, key);
 }
-
 
 int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, const char* key_id, struct tuf_key **key)
 {
@@ -842,7 +573,6 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 		return TUF_SUCCESS;
 }
 
-
 int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned char **sha256, size_t *length)
 {
 	if (role == ROLE_SNAPSHOT) {
@@ -898,7 +628,7 @@ int split_metadata_and_check_signature(const char *data, size_t file_size, enum 
 		return TUF_SUCCESS;
 
 	if (role == ROLE_SNAPSHOT || role == ROLE_TARGETS) {
-		ret = verify_length_and_hashes(data_buffer, file_size, role);
+		ret = verify_length_and_hashes(data, file_size, role);
 		if (ret != TUF_SUCCESS)
 			return ret;
 	}
@@ -913,58 +643,6 @@ int split_metadata_and_check_signature(const char *data, size_t file_size, enum 
 	return TUF_SUCCESS;
 }
 
-
-
-/* tests only */
-int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
-{
-	int ret = -1;
-	size_t file_size;
-
-	ret = fetch_file(file_base_name, data_buffer, DATA_BUFFER_LEN, &file_size);
-	if (ret != 0)
-		return ret;
-
-	ret = split_metadata_and_check_signature(data_buffer, file_size, role, signatures, signed_value, signed_value_len, check_signature_and_hashes);
-	if (ret < 0)
-		return ret;
-	return TUF_SUCCESS;
-}
-
-
-/* tests only */
-int parse_root(const unsigned char *file_base_name, bool check_signature)
-{
-	int ret = -1;
-	int signature_index;
-	char *signed_value;
-	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
-	struct tuf_root new_root;
-
-	memset(&new_root, 0, sizeof(new_root));
-
-	ret = fetch_role_and_check_signature(file_base_name, ROLE_ROOT, signatures, &signed_value, &signed_value_len, check_signature);
-	if (ret != 0)
-		return ret;
-
-	ret = parse_root_signed_metadata(signed_value, signed_value_len, &new_root);
-	if (ret < 0)
-		return ret;
-
-	if (check_signature) {
-		// check signature using current new root key
-		ret = verify_data_signature_for_role(signed_value, signed_value_len, signatures, ROLE_ROOT, &new_root);
-		// log_debug("Verifying against new root ret = %d\n", ret);
-		if (ret < 0)
-			return ret;
-	}
-
-	memcpy(&updater.root, &new_root, sizeof(updater.root));
-
-	return ret;
-}
-
 int update_root(const unsigned char *data, size_t len, bool check_signature)
 {
 	// TODO: make sure check_signature is false only during unit testing
@@ -977,7 +655,6 @@ int update_root(const unsigned char *data, size_t len, bool check_signature)
 	struct tuf_root new_root;
 
 	memset(&new_root, 0, sizeof(new_root));
-
 	ret = split_metadata_and_check_signature(data, len, ROLE_ROOT, signatures, &signed_value, &signed_value_len, check_signature);
 	if (ret != 0)
 		return ret;
@@ -999,7 +676,6 @@ int update_root(const unsigned char *data, size_t len, bool check_signature)
 
 	return ret;
 }
-
 
 int parse_tuf_file_info(char *data, size_t len, struct tuf_role_file *target)
 {
@@ -1060,31 +736,6 @@ int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *t
 	target->loaded = true;
 
 	return parse_base_metadata(data, len, ROLE_TIMESTAMP, &target->base);
-}
-
-/* tests only */
-int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
-{
-	int ret = -1;
-	int signature_index;
-	char *signed_value;
-	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
-	struct tuf_timestamp new_timestamp;
-
-	memset(&new_timestamp, 0, sizeof(new_timestamp));
-
-	ret = fetch_role_and_check_signature(file_base_name, ROLE_TIMESTAMP, signatures, &signed_value, &signed_value_len, check_signature);
-	if (ret != 0)
-		return ret;
-
-	// Parsing Timestamp
-	ret = parse_timestamp_signed_metadata(signed_value, signed_value_len, &new_timestamp);
-	if (ret < 0)
-		return ret;
-
-	memcpy(&updater.timestamp, &new_timestamp, sizeof(updater.timestamp));
-	return ret;
 }
 
 int update_timestamp(const unsigned char *data, size_t len, bool check_signature)
@@ -1173,34 +824,6 @@ int parse_snapshot_signed_metadata(char *data, int len, struct tuf_snapshot *tar
 	return parse_base_metadata(data, len, ROLE_SNAPSHOT, &target->base);
 }
 
-/* tests only */
-int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
-{
-	int ret = -1;
-	int signature_index;
-	char *signed_value;
-	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
-	struct tuf_snapshot new_snapshot;
-
-	memset(&new_snapshot, 0, sizeof(new_snapshot));
-
-	if (!updater.timestamp.loaded)
-		return TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED;
-
-	ret = fetch_role_and_check_signature(file_base_name, ROLE_SNAPSHOT, signatures, &signed_value, &signed_value_len, check_signature);
-	if (ret != 0)
-		return ret;
-
-	ret = parse_snapshot_signed_metadata(signed_value, signed_value_len, &new_snapshot);
-	if (ret < 0)
-		return ret;
-
-	memcpy(&updater.snapshot, &new_snapshot, sizeof(updater.snapshot));
-	return ret;
-}
-
-
 int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 {
 	JSONStatus_t result;
@@ -1230,7 +853,7 @@ int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 		if (result == JSONSuccess) {
 			ret = tuf_parse_single_target(pair.key, pair.keyLength, pair.value, pair.valueLength, updater.application_context);
 			if (ret < 0) {
-				log_error("Error processing target %.*s\n", pair.keyLength, pair.key);
+				log_error("Error processing target %.*s\n", (int)pair.keyLength, pair.key);
 				break;
 			}
 		}
@@ -1240,8 +863,6 @@ int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 
 	return parse_base_metadata(data, len, ROLE_TARGETS, &target->base);
 }
-
-
 
 int check_final_timestamp()
 {
@@ -1258,7 +879,6 @@ int check_final_timestamp()
 
 	return TUF_SUCCESS;
 }
-
 
 int check_final_snapshot()
 {
@@ -1442,7 +1062,7 @@ int persist_metadata(enum tuf_role role, char *data, size_t len)
 int download_metadata(enum tuf_role role, char *target_buffer, size_t limit, int version, size_t *file_size)
 {
 	char *role_name = get_role_name(role);
-	char role_file_name[20];
+	char role_file_name[30];
 	int ret;
 
 	if (version == 0)
@@ -1459,13 +1079,13 @@ int load_root()
 	size_t file_size;
 	int ret;
 
-	ret = load_local_metadata(ROLE_ROOT, data_buffer, sizeof(data_buffer), &file_size);
+	ret = load_local_metadata(ROLE_ROOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
 		log_debug("local root not found\n");
 		return ret;
 	}
 
-	ret = update_root(data_buffer, file_size, true);
+	ret = update_root(updater.data_buffer, file_size, true);
 	if (ret < 0)
 		return ret;
 
@@ -1473,17 +1093,17 @@ int load_root()
         int upper_bound = lower_bound + config.max_root_rotations;
 
         for (int next_version = lower_bound; next_version < upper_bound; next_version++) {
-		ret = download_metadata(ROLE_ROOT, data_buffer, sizeof(data_buffer), next_version, &file_size);
+		ret = download_metadata(ROLE_ROOT, updater.data_buffer, updater.data_buffer_len, next_version, &file_size);
 		if (ret < 0) {
 			if (ret == TUF_HTTP_NOT_FOUND || ret == TUF_HTTP_FORBIDDEN)
 				break;
 			else
 				return ret;
 		}
-		ret = update_root(data_buffer, file_size, true);
+		ret = update_root(updater.data_buffer, file_size, true);
 		if (ret < 0)
 			return ret;
-		ret = persist_metadata(ROLE_ROOT, data_buffer, file_size);
+		ret = persist_metadata(ROLE_ROOT, updater.data_buffer, file_size);
 		if (ret < 0)
 			return ret;
 	}
@@ -1496,22 +1116,22 @@ int load_timestamp()
 	size_t file_size;
 	int ret;
 
-	ret = load_local_metadata(ROLE_TIMESTAMP, data_buffer, sizeof(data_buffer), &file_size);
+	ret = load_local_metadata(ROLE_TIMESTAMP, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
 		log_debug("local timestamp not found. Proceeding\n");
 	} else {
-		ret = update_timestamp(data_buffer, file_size, true);
+		ret = update_timestamp(updater.data_buffer, file_size, true);
 		if (ret < 0)
 			log_debug("local timestamp is not valid. Proceeding\n");
 	}
 
-	ret = download_metadata(ROLE_TIMESTAMP, data_buffer, sizeof(data_buffer), 0, &file_size);
+	ret = download_metadata(ROLE_TIMESTAMP, updater.data_buffer, updater.data_buffer_len, 0, &file_size);
 	if (ret < 0)
 		return ret;
-	ret = update_timestamp(data_buffer, file_size, true);
+	ret = update_timestamp(updater.data_buffer, file_size, true);
 	if (ret < 0)
 		return ret;
-	ret = persist_metadata(ROLE_TIMESTAMP, data_buffer, file_size);
+	ret = persist_metadata(ROLE_TIMESTAMP, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
 }
@@ -1523,11 +1143,11 @@ int load_snapshot()
 	size_t file_size;
 	int ret;
 
-	ret = load_local_metadata(ROLE_SNAPSHOT, data_buffer, sizeof(data_buffer), &file_size);
+	ret = load_local_metadata(ROLE_SNAPSHOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
 		log_debug("local snapshot not found. Proceeding\n");
 	} else {
-		ret = update_snapshot(data_buffer, file_size, true);
+		ret = update_snapshot(updater.data_buffer, file_size, true);
 		if (ret < 0)
 			log_debug("local snapshot is not valid. Proceeding\n");
 		else
@@ -1543,13 +1163,13 @@ int load_snapshot()
 	if (updater.timestamp.snapshot_file.length)
 		max_length = updater.timestamp.snapshot_file.length;
 
-	ret = download_metadata(ROLE_SNAPSHOT, data_buffer, max_length, 0, &file_size);
+	ret = download_metadata(ROLE_SNAPSHOT, updater.data_buffer, max_length, 0, &file_size);
 	if (ret < 0)
 		return ret;
-	ret = update_snapshot(data_buffer, file_size, true);
+	ret = update_snapshot(updater.data_buffer, file_size, true);
 	if (ret < 0)
 		return ret;
-	ret = persist_metadata(ROLE_SNAPSHOT, data_buffer, file_size);
+	ret = persist_metadata(ROLE_SNAPSHOT, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
 }
@@ -1564,11 +1184,11 @@ int load_targets()
 	if (updater.targets.loaded)
 		return TUF_SUCCESS;
 
-	ret = load_local_metadata(ROLE_SNAPSHOT, data_buffer, sizeof(data_buffer), &file_size);
+	ret = load_local_metadata(ROLE_SNAPSHOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
 		log_debug("local targets not found. Proceeding\n");
 	} else {
-		ret = update_targets(data_buffer, file_size, true);
+		ret = update_targets(updater.data_buffer, file_size, true);
 		if (ret < 0) {
 			log_debug("local targets is not valid. Proceeding\n");
 		}
@@ -1587,24 +1207,27 @@ int load_targets()
 	if (updater.snapshot.targets_file.length)
 		max_length = updater.snapshot.targets_file.length;
 
-	ret = download_metadata(ROLE_TARGETS, data_buffer, max_length, 0, &file_size);
+	ret = download_metadata(ROLE_TARGETS, updater.data_buffer, max_length, 0, &file_size);
 	if (ret < 0)
 		return ret;
-	ret = update_targets(data_buffer, file_size, true);
+	ret = update_targets(updater.data_buffer, file_size, true);
 	if (ret < 0)
 		return ret;
-	ret = persist_metadata(ROLE_TARGETS, data_buffer, file_size);
+	ret = persist_metadata(ROLE_TARGETS, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
 }
 
-
 int refresh()
 {
+        // static unsigned char data_buffer[DATA_BUFFER_LEN];
 	int ret;
-	memset(&updater, 0, sizeof(updater));
-	updater.reference_time = get_current_gmt_time();
-	updater.application_context = tuf_get_application_context();
+
+	// memset(&updater, 0, sizeof(updater));
+	// updater.reference_time = get_current_gmt_time();
+	// updater.application_context = tuf_get_application_context();
+	// updater.data_buffer = data_buffer;
+	// updater.data_buffer_len = sizeof(data_buffer);
 
 	ret = load_root();
 	if (ret < 0)
@@ -1625,413 +1248,4 @@ int refresh()
 	tuf_targets_processing_done(updater.application_context);
 
 	return TUF_SUCCESS;
-}
-
-
-/* for unit tests only */
-int verify_data_signature(const char *data, size_t data_len, const char *signing_public_key_b64, size_t signing_public_key_b64_len)
-{
-	int ret = -1;
-	int signature_index;
-	char *signed_value;
-	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
-
-	ret = split_metadata(data, data_len, signatures, TUF_SIGNATURES_MAX_COUNT, &signed_value, &signed_value_len);
-	if (ret < 0)
-		return ret;
-
-	for (signature_index=0; signature_index < TUF_SIGNATURES_MAX_COUNT; signature_index++)
-	{
-		if (!signatures[signature_index].set)
-			break;
-
-		struct tuf_key key;
-		memset(&key, 0, sizeof(key));
-		memcpy(key.keyval, signing_public_key_b64, signing_public_key_b64_len);
-		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, strlen(signatures[signature_index].sig), &key);
-		if (!ret) {
-			/* Found valid signature */
-			return ret;
-		}
-	}
-	/* No valid signature found */
-	return ret;
-}
-
-/* for unit tests only */
-int verify_file_signature(const char *file_base_name, const char *signing_key_file)
-{
-    	unsigned char signing_public_key_b64[TUF_BIG_CHUNK];
-	size_t file_size, key_file_size;
-	int ret;
-
-	ret = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH, &file_size);
-	if (ret < 0)
-		return -1;
-
-
-	ret = read_file_posix(signing_key_file, signing_public_key_b64, sizeof(signing_public_key_b64), TUF_TEST_FILES_PATH, &key_file_size);
-	if (ret < 0)
-		return -20;
-
-	return verify_data_signature(data_buffer, file_size, signing_public_key_b64, key_file_size);
-}
-
-/* for unit tests only */
-int verify_file_hash(const char *file_base_name, const char *sha256_file)
-{
-    	unsigned char hash256_b16[TUF_BIG_CHUNK];
-	size_t file_size, hash_file_size;
-	int ret;
-
-	ret = read_file_posix(file_base_name, data_buffer, DATA_BUFFER_LEN, TUF_TEST_FILES_PATH, &file_size);
-	if (ret < 0)
-		return -1;
-
-	ret = read_file_posix(sha256_file, hash256_b16, sizeof(hash256_b16), TUF_TEST_FILES_PATH, &hash_file_size);
-	if (ret < 0)
-		return -30;
-
-	log_debug("Verifying hash for %s\n", file_base_name);
-	return verify_data_hash_sha256(data_buffer, file_size, hash256_b16, hash_file_size-1);
-}
-
-/**
- * @brief Test group definition.
- */
-TEST_GROUP( Full_LibTufNAno );
-
-TEST_SETUP( Full_LibTufNAno )
-{
-	memset(&updater, 0, sizeof(updater));
-	load_config();
-}
-
-TEST_TEAR_DOWN( Full_LibTufNAno )
-{
-}
-
-TEST_GROUP_RUNNER( Full_LibTufNAno )
-{
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestTimestampSignature );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestMixedSignatures );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSnapshotSignature );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestTargetSignature );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestRootSignature );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestRoot1Load );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestRoot2Load );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestRootUpdateCheck );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestTimestampLoadWithoutRoot );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestTimestampLoad );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSnapshotLoadWithoutTimestamp );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSnapshotLoad );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestSha256 );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestFullLoadRootOperation );
-	RUN_TEST_CASE( Full_LibTufNAno, libTufNano_TestRefresh );
-
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestTimestampSignature )
-{
-	int ret;
-
-	ret = verify_file_signature("timestamp.json", "timestamp.json.sig_key");
-	TEST_ASSERT_EQUAL(0, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestSnapshotSignature )
-{
-	int ret;
-
-	ret = verify_file_signature("snapshot.json", "snapshot.json.sig_key");
-	TEST_ASSERT_EQUAL(0, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestTargetSignature )
-{
-	int ret;
-
-	ret = verify_file_signature("targets.json", "targets.json.sig_key");
-	TEST_ASSERT_EQUAL(0, ret);
-}
-
-
-TEST( Full_LibTufNAno, libTufNano_TestRootSignature )
-{
-	int ret;
-
-	ret = verify_file_signature("1.root_canonical.json", "1.root_canonical.json.sig_key");
-	TEST_ASSERT_EQUAL(0, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestMixedSignatures )
-{
-	int ret;
-
-	ret = verify_file_signature("timestamp.json", "snapshot.json.sig_key");
-	TEST_ASSERT_EQUAL(MBEDTLS_ERR_RSA_INVALID_PADDING, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestRoot1Load )
-{
-	int ret;
-
-	ret = parse_root("1.root_canonical.json", true);
-
-	TEST_ASSERT_EQUAL(0, ret);
-
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.keys[0].id);
-	TEST_ASSERT_EQUAL_STRING("8e126cc4e3ed6eaf4b638216c856c12ae2d8fa36b0b646bad1c98581a3d8e0df", updater.root.keys[1].id);
-	TEST_ASSERT_EQUAL_STRING("9d99928f808ecd9b10ad171312adc80248d2eb3e58082c2aad239f9928c2479b", updater.root.keys[2].id);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.keys[3].id);
-
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[0].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[1].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[2].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[3].keytype);
-
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[0].keyval);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkvZdqvdobQJn/L0wLPYC\\nPmZgAvEnvVRaAe7q6aTPCMVXUXLt45jrr9tpvyhNyy/EfUP1RngToHAQAYieG9Wf\\nzzenGNIg57c9F2vT1ga4KwBTwnvk6qsoVINL4nJwQWRAQJbxJfkcuhWDBc1R+OjF\\nze6eYTm71AIyZiz4UR63FsVgXkM5wnCC82/0XhyKpxVI/y7N1l/wQ8toKbb3wF0K\\nIcsna0HfxvaS17lVA20fNr3KSqfg49j7ReuBNEl4QCZWhQ6xY/5zsYLYeMv4N/Bz\\n/AfyMl2QvQVf3gblem4lXoqNeRbDmVcwaNZahP0goYs0o+lCFDOyiftTazetfiat\\nowIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[1].keyval);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr3K10h/xn11pGn8DH+vv\\nQ3gK+NB9oVKQ8+6bh4ovo6tEVc64Wwk3pWM3QkqunMmOHusgCeLo+q97LIMcS/IZ\\nYUE+pHTGdxlnJknyJBNscaF74BPQQ5crIuRdBxfcLOgniq3e48drtIN0dlNpsDcT\\nyBCUJHDV4tALOd6tTEV44bnmGacM/VQZdEG+Q4UUnao/AugZ/T+9DaUbPoBUrlPN\\n6Yn5Al5/y/oR22OrPbcNt2dIylqWxy2h21dJJuIt5EOsIuzFwP1uXr+rimIZtme6\\nSJLS7CMJ9DzeACRLr/F+KMSu8XpCvSVp6nSlao1hCzbSGLhK1jaUe01aOSk6xYKs\\n4wIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[2].keyval);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[3].keyval);
-
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_SNAPSHOT].threshold);
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TARGETS].threshold);
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TIMESTAMP].threshold);
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_ROOT].threshold);
-
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.roles[ROLE_SNAPSHOT].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("9d99928f808ecd9b10ad171312adc80248d2eb3e58082c2aad239f9928c2479b", updater.root.roles[ROLE_TARGETS].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.roles[ROLE_TIMESTAMP].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("8e126cc4e3ed6eaf4b638216c856c12ae2d8fa36b0b646bad1c98581a3d8e0df", updater.root.roles[ROLE_ROOT].keyids[0]);
-
-
-	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:55:13Z", updater.root.base.expires);
-	TEST_ASSERT_EQUAL(1665777313, updater.root.base.expires_epoch);
-
-	TEST_ASSERT_EQUAL(1, updater.root.base.version);
-
-	struct tuf_key *key;
-	ret = get_public_key_for_role(&updater.root, ROLE_SNAPSHOT, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-	ret = get_public_key_for_role(&updater.root, ROLE_TARGETS, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr3K10h/xn11pGn8DH+vv\\nQ3gK+NB9oVKQ8+6bh4ovo6tEVc64Wwk3pWM3QkqunMmOHusgCeLo+q97LIMcS/IZ\\nYUE+pHTGdxlnJknyJBNscaF74BPQQ5crIuRdBxfcLOgniq3e48drtIN0dlNpsDcT\\nyBCUJHDV4tALOd6tTEV44bnmGacM/VQZdEG+Q4UUnao/AugZ/T+9DaUbPoBUrlPN\\n6Yn5Al5/y/oR22OrPbcNt2dIylqWxy2h21dJJuIt5EOsIuzFwP1uXr+rimIZtme6\\nSJLS7CMJ9DzeACRLr/F+KMSu8XpCvSVp6nSlao1hCzbSGLhK1jaUe01aOSk6xYKs\\n4wIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-
-	ret = get_public_key_for_role(&updater.root, ROLE_TIMESTAMP, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-	ret = get_public_key_for_role(&updater.root, ROLE_ROOT, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkvZdqvdobQJn/L0wLPYC\\nPmZgAvEnvVRaAe7q6aTPCMVXUXLt45jrr9tpvyhNyy/EfUP1RngToHAQAYieG9Wf\\nzzenGNIg57c9F2vT1ga4KwBTwnvk6qsoVINL4nJwQWRAQJbxJfkcuhWDBc1R+OjF\\nze6eYTm71AIyZiz4UR63FsVgXkM5wnCC82/0XhyKpxVI/y7N1l/wQ8toKbb3wF0K\\nIcsna0HfxvaS17lVA20fNr3KSqfg49j7ReuBNEl4QCZWhQ6xY/5zsYLYeMv4N/Bz\\n/AfyMl2QvQVf3gblem4lXoqNeRbDmVcwaNZahP0goYs0o+lCFDOyiftTazetfiat\\nowIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-	ret = get_public_key_for_role(&updater.root, TUF_ROLES_COUNT, 0, &key);
-	TEST_ASSERT_EQUAL(-EINVAL, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestRoot2Load )
-{
-	int ret;
-
-	ret = parse_root("2.root_canonical.json", false);
-
-	TEST_ASSERT_EQUAL(0, ret);
-
-	TEST_ASSERT_EQUAL_STRING("22e8f6d06eec2e4d50187b74ff21ddbc15326fb56e2d62fd68d10c0cb43b4e7e", updater.root.keys[0].id);
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.keys[1].id);
-	TEST_ASSERT_EQUAL_STRING("91f89e098b6c3ee0878b9f1518c2f88624dad3301ed82f1c688310de952fce0c", updater.root.keys[2].id);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.keys[3].id);
-
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[0].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[1].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[2].keytype);
-	TEST_ASSERT_EQUAL_STRING("RSA", updater.root.keys[3].keytype);
-
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsac985OY9LESVVHaRJBU\\nV2i1uHCkocMKHihaUEFZbE1dv6EMwBrdM+Z0b2I4A6E6GXmAJE3FVrsXikatleOb\\n7yau+yzv2b4wiK/7OBgz61hPmVsK1k1QVK1f3v0J27Koa6YeVUbpisXCuTQrrA23\\nczuvZlW9tHtJHY3uD03MfwlcENr+gvppDxEHCUzoUvN16IHsnGGGdgL8q4uNelDq\\n3iJCz/ArhEWOkq613sLZbOq83TyYzVgw0lcxPJ1oX+NA4iAC2Pl/uRLUtVawefUc\\nZ5k4DgpouAy2ot9d4oGRjs2LDnmKFwFiMbLgMQf6nIK8PDcso1cA44UwZuC7xSFU\\n6QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[0].keyval);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[1].keyval);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmu+MksWTfMScaFw4KUBk\\nwKcSeROX8atN4D8r42BHgCsLr4OcXmHzkDVSuCCymJ2SEkgnd6pJxIaWs+HS0Nni\\nu3Gxqv9+6ZUKiMzG89gFkx6kU4RZRd3TcMZOTZaabWhDuVpg6Gkig759qL6B/jNi\\nK1FBAKNGPp3S0rZ+zghdrvrKzUSlVLmvOqTI0PhddkzoNGDO9v6F40n58NKvlOUY\\nCn8wk1n8DGG36CActHIjoAUoQsueBTRNdUy5vNmX4BuEdhUdwDaaJwEkvIvoU3S/\\nwLNlSexU5EJjqWlNeUEWvUJjbxXpSMqAhTtT1MG5En+yqPhH1tGuzK3w6JCS9aou\\nvQIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[2].keyval);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				updater.root.keys[3].keyval);
-
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_SNAPSHOT].threshold);
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TARGETS].threshold);
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_TIMESTAMP].threshold);
-	TEST_ASSERT_EQUAL(1, updater.root.roles[ROLE_ROOT].threshold);
-
-	TEST_ASSERT_EQUAL_STRING("2e6d5e7f1469cb08be5f371ff5f211a45005223e5aff20815f36880c9bd418cb", updater.root.roles[ROLE_SNAPSHOT].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("22e8f6d06eec2e4d50187b74ff21ddbc15326fb56e2d62fd68d10c0cb43b4e7e", updater.root.roles[ROLE_TARGETS].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("c0919e0f82b94be9eef55dcd5f224d8d8b4da80299a4ebef58018ab68fee0a8d", updater.root.roles[ROLE_TIMESTAMP].keyids[0]);
-	TEST_ASSERT_EQUAL_STRING("91f89e098b6c3ee0878b9f1518c2f88624dad3301ed82f1c688310de952fce0c", updater.root.roles[ROLE_ROOT].keyids[0]);
-
-	TEST_ASSERT_EQUAL_STRING("2022-10-14T19:56:08Z", updater.root.base.expires);
-	TEST_ASSERT_EQUAL(1665777368, updater.root.base.expires_epoch);
-	TEST_ASSERT_EQUAL(2, updater.root.base.version);
-
-	struct tuf_key *key;
-	ret = get_public_key_for_role(&updater.root, ROLE_SNAPSHOT, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAstQmVmyZIA2tejyNDkug\\npUsncb2cBGl/vGkrsDJQvxTPpNnmtRQTdQoZ/qqPWonNZ/JEJRVL1xc24ioyx/dS\\nCKvdZzAsIxSoklxoDslSP8jDKwdFLj34snGBgtdDJ+bh44Oei6532GX5iy7Xj3SE\\na5pVoQ6nLWz5AULw7gmR01qIA3J1OZ7oVhR5hF4W/gNc8hAQg1gMRSrm+PUxzRr2\\n5YfZznE9JVsvuTi/e0iMDBeE1cXlUzo1/B2b+7072xlBsGP61tuln6c6kRA7PbIg\\nHX5Q+vs7svBY3wl07an8IxvHi9iZUYW9V8HH67/jJxree04kjC2KhaozEJLITwE0\\n4QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-	ret = get_public_key_for_role(&updater.root, ROLE_TARGETS, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsac985OY9LESVVHaRJBU\\nV2i1uHCkocMKHihaUEFZbE1dv6EMwBrdM+Z0b2I4A6E6GXmAJE3FVrsXikatleOb\\n7yau+yzv2b4wiK/7OBgz61hPmVsK1k1QVK1f3v0J27Koa6YeVUbpisXCuTQrrA23\\nczuvZlW9tHtJHY3uD03MfwlcENr+gvppDxEHCUzoUvN16IHsnGGGdgL8q4uNelDq\\n3iJCz/ArhEWOkq613sLZbOq83TyYzVgw0lcxPJ1oX+NA4iAC2Pl/uRLUtVawefUc\\nZ5k4DgpouAy2ot9d4oGRjs2LDnmKFwFiMbLgMQf6nIK8PDcso1cA44UwZuC7xSFU\\n6QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-
-	ret = get_public_key_for_role(&updater.root, ROLE_TIMESTAMP, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyX9EqnICo4ewErN82S00\\nWmCPhEfoEDwpG593Kh1E04MDC+PB3YIdkcqFTSeMkZW25GgWclLyDEAuUmGEO6yN\\nrR1S4/e36ImiIW2vEZhlMIX8a/SEb11Rhkvi/GRpt/ZyLp1El4M17nYO/GnYr1dE\\nhn2PCaZIo3jVuxmZ/+nzY/9whanjKoomGRcGlAne927DHYV0XiI1dBt+4gvpMdXp\\nEH8ZCHPQHjsUe0S433niVMIa4pIaQWvdEFliJ703Dqbxn1iVHUi+p8j+z6oh2v1z\\nZz0aiECwKOtRsGUNtJWeZfx5ZOOoeKyE47DZXPsolw7DlJxZRZlGny1KpX8Y0yTA\\n7QIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-	ret = get_public_key_for_role(&updater.root, ROLE_ROOT, 0, &key);
-	TEST_ASSERT_EQUAL(0, ret);
-	TEST_ASSERT_EQUAL_STRING("-----BEGIN PUBLIC KEY-----\\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAmu+MksWTfMScaFw4KUBk\\nwKcSeROX8atN4D8r42BHgCsLr4OcXmHzkDVSuCCymJ2SEkgnd6pJxIaWs+HS0Nni\\nu3Gxqv9+6ZUKiMzG89gFkx6kU4RZRd3TcMZOTZaabWhDuVpg6Gkig759qL6B/jNi\\nK1FBAKNGPp3S0rZ+zghdrvrKzUSlVLmvOqTI0PhddkzoNGDO9v6F40n58NKvlOUY\\nCn8wk1n8DGG36CActHIjoAUoQsueBTRNdUy5vNmX4BuEdhUdwDaaJwEkvIvoU3S/\\nwLNlSexU5EJjqWlNeUEWvUJjbxXpSMqAhTtT1MG5En+yqPhH1tGuzK3w6JCS9aou\\nvQIDAQAB\\n-----END PUBLIC KEY-----\\n",
-				key->keyval);
-
-	ret = get_public_key_for_role(&updater.root, TUF_ROLES_COUNT, 0, &key);
-	TEST_ASSERT_EQUAL(-EINVAL, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestRootUpdateCheck )
-{
-	int ret;
-
-	ret = parse_root("1.root_canonical.json", true);
-
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_root("2.root_canonical.json", true);
-
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestTimestampLoadWithoutRoot )
-{
-	int ret;
-
-	ret = parse_timestamp("timestamp.json", true);
-	TEST_ASSERT_EQUAL(TUF_ERROR_ROOT_ROLE_NOT_LOADED, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestTimestampLoad )
-{
-	int ret;
-
-	ret = parse_root("1.root_canonical.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_root("2.root_canonical.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_timestamp("timestamp.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	TEST_ASSERT_EQUAL(true, updater.timestamp.loaded);
-
-	TEST_ASSERT_EQUAL(820, updater.timestamp.snapshot_file.length);
-	TEST_ASSERT_EQUAL(875, updater.timestamp.snapshot_file.version);
-	TEST_ASSERT_EQUAL_STRING("1119a2d55772f0cd7a94cbc916c8a28183f24542fd2e1377cd06be74f0aa328f", updater.timestamp.snapshot_file.hash_sha256);
-
-	TEST_ASSERT_EQUAL_STRING("2022-09-09T18:13:01Z", updater.timestamp.base.expires);
-	TEST_ASSERT_EQUAL(1662747181, updater.timestamp.base.expires_epoch);
-
-	TEST_ASSERT_EQUAL(875, updater.timestamp.base.version);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestSnapshotLoadWithoutTimestamp )
-{
-	int ret;
-
-	ret = parse_root("1.root_canonical.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_root("2.root_canonical.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_snapshot("snapshot.json", true);
-	TEST_ASSERT_EQUAL(TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestSnapshotLoad )
-{
-	int ret;
-
-	ret = parse_root("1.root_canonical.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_root("2.root_canonical.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_timestamp("timestamp.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = parse_snapshot("snapshot.json", true);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestSha256 )
-{
-	int ret;
-
-	ret = verify_file_hash("targets.json", "targets.json.sha256");
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = verify_file_hash("timestamp.json", "targets.json.sha256");
-	TEST_ASSERT_EQUAL(TUF_HASH_VERIFY_ERROR, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestFullLoadRootOperation )
-{
-	int ret;
-
-	ret = load_root();
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-}
-
-TEST( Full_LibTufNAno, libTufNano_TestRefresh )
-{
-	int ret;
-
-	remove_all_local_role_files();
-
-	ret = refresh();
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-
-	ret = refresh();
-	TEST_ASSERT_EQUAL(TUF_ERROR_SAME_VERSION, ret);
-}
-
-int run_full_test( void )
-{
-	UNITY_BEGIN();
-
-	/* Run the test group. */
-	RUN_TEST_GROUP( Full_LibTufNAno );
-
-	int status = UNITY_END();
-	return status;
-}
-
-int main()
-{
-	log_debug("get_current_gmt_time=%ld\n", get_current_gmt_time());
-	run_full_test();
 }
