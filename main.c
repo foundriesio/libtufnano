@@ -205,15 +205,6 @@ char* get_role_name(enum tuf_role role) {
 }
 
 /* Application specific code */
-// struct aknano_target {
-// 	int version;
-// };
-
-// struct aknano_context {
-// 	struct aknano_target selected_target;
-// };
-
-// struct aknano_context aknano_context;
 
 void *tuf_get_application_context();
 int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const char *data, size_t len, void *application_context);
@@ -822,13 +813,6 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 	int signature_index;
 	int threshold;
 	int valid_signatures_count = 0;
-	// char *signed_value;
-	// int signed_value_len;
-	// struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
-
-	// ret = split_metadata(data, data_len, signatures, TUF_SIGNATURES_MAX_COUNT, &signed_value, &signed_value_len);
-	// if (ret < 0)
-	// 	return ret;
 
 	threshold = updater.root.roles[role].threshold;
 	for (signature_index=0; signature_index < TUF_SIGNATURES_MAX_COUNT && valid_signatures_count < threshold; signature_index++)
@@ -951,9 +935,6 @@ int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf
 /* tests only */
 int parse_root(const unsigned char *file_base_name, bool check_signature)
 {
-	// TODO: make sure check_signature is false only during unit testing
-
-	// size_t file_size;
 	int ret = -1;
 	int signature_index;
 	char *signed_value;
@@ -966,8 +947,6 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 	ret = fetch_role_and_check_signature(file_base_name, ROLE_ROOT, signatures, &signed_value, &signed_value_len, check_signature);
 	if (ret != 0)
 		return ret;
-
-	// Parsing ROOT
 
 	ret = parse_root_signed_metadata(signed_value, signed_value_len, &new_root);
 	if (ret < 0)
@@ -990,7 +969,6 @@ int update_root(const unsigned char *data, size_t len, bool check_signature)
 {
 	// TODO: make sure check_signature is false only during unit testing
 
-	// size_t file_size;
 	int ret = -1;
 	int signature_index;
 	char *signed_value;
@@ -1424,11 +1402,6 @@ int update_targets(const unsigned char *data, size_t len, bool check_signature)
 	ret = parse_targets_metadata(signed_value, signed_value_len, &new_targets);
 	if (ret < 0)
 		return ret;
-
-        // if new_delegate.signed.type != Targets.type:
-        //     raise exceptions.RepositoryError(
-        //         f"Expected 'targets', got '{new_delegate.signed.type}'"
-        //     )
 
 	if (updater.snapshot.targets_file.version != new_targets.base.version) {
 		log_error("Expected targets v%d, got v%d\n", updater.snapshot.targets_file.version, new_targets.base.version);
