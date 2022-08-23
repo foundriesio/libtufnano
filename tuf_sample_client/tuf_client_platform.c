@@ -33,7 +33,6 @@ time_t get_current_gmt_time()
 size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit, const char *base_path, size_t *file_size)
 {
 	char file_path[MAX_FILE_PATH_LEN];
-	size_t ret;
 	FILE *f;
 
 	if (limit <= 0) {
@@ -80,7 +79,6 @@ size_t write_file_posix(const char *base_name, const char *data, size_t len, con
 int remove_local_file_posix(const char *base_name, char *base_path)
 {
 	char file_path[MAX_FILE_PATH_LEN];
-	size_t ret;
 
 	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
 	return unlink(file_path);
@@ -127,7 +125,6 @@ int remove_local_role_file(enum tuf_role role)
 {
 	const char *role_name = get_role_name(role);
 	char role_file_name[20];
-	int ret;
 
 	snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
 	return remove_local_file_posix(role_file_name, TUF_LOCAL_FILES_PATH);
