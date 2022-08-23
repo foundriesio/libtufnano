@@ -39,13 +39,14 @@ void load_config()
 	config.targets_max_length = DATA_BUFFER_LEN;
 }
 
-const char* get_role_name(enum tuf_role role) {
-	switch(role) {
-		case ROLE_ROOT: return _ROOT;
-		case ROLE_SNAPSHOT: return _SNAPSHOT;
-		case ROLE_TARGETS: return _TARGETS;
-		case ROLE_TIMESTAMP: return _TIMESTAMP;
-		default: return "";
+const char *get_role_name(enum tuf_role role)
+{
+	switch (role) {
+	case ROLE_ROOT: return _ROOT;
+	case ROLE_SNAPSHOT: return _SNAPSHOT;
+	case ROLE_TARGETS: return _TARGETS;
+	case ROLE_TIMESTAMP: return _TIMESTAMP;
+	default: return "";
 	}
 }
 
@@ -83,11 +84,12 @@ bool is_expired(time_t expires, time_t reference_time)
 	return expires < reference_time;
 }
 
-void replace_escape_chars_from_b64_string(unsigned char* s)
+void replace_escape_chars_from_b64_string(unsigned char *s)
 {
 	int i;
 	char *p = s;
 	bool replace_next = false;
+
 	while (*p) {
 		if (replace_next) {
 			*p = '\n';
@@ -174,8 +176,7 @@ int parse_root_signed_metadata(char *data, int len, struct tuf_root *target)
 	if (len <= 0)
 		return -EINVAL;
 	result = JSON_Validate(data, len);
-	if( result != JSONSuccess )
-	{
+	if (result != JSONSuccess) {
 		log_error("split_metadata: Got invalid JSON with len=%d: %.*s\n", len, len, data);
 		return TUF_ERROR_INVALID_METADATA;
 	}
@@ -288,14 +289,14 @@ int split_metadata(const char *data, int len, struct tuf_signature *signatures, 
 	result = JSON_Validate(data, len);
 	if (len <= 0)
 		return -EINVAL;
-	if( result != JSONSuccess )
-	{
+	if (result != JSONSuccess) {
 		log_error("split_metadata: Got invalid JSON: %s\n", data);
 		return TUF_ERROR_INVALID_METADATA;
 	}
 	// log_error("JSON is valid\n");
 
 	bool foundMatch = false;
+
 	result = JSON_Search(data, len, "signatures", strlen("signatures"), &outValue, &outValueLength);
 	if (result == JSONSuccess) {
 		// log_debug("outValue=\n%.*s\n", (int)outValueLength, outValue);
@@ -370,7 +371,7 @@ static void print_hex(const char *title, const unsigned char buf[], size_t len)
 	log_debug("\r\n");
 }
 
-static void hextobin(const char * str, uint8_t * bytes, size_t blen)
+static void hextobin(const char *str, uint8_t *bytes, size_t blen)
 {
 	uint8_t pos, idx0, idx1;
 	/* mapping of ASCII characters to hex values */
@@ -382,15 +383,15 @@ static void hextobin(const char * str, uint8_t * bytes, size_t blen)
 	};
 
 	memset(bytes, 0, blen);
-	for (pos = 0; ((pos < (blen*2)) && (pos < strlen(str))); pos += 2)
-	{
-		idx0 = ((uint8_t)str[pos+0] & 0x1F) ^ 0x10;
-		idx1 = ((uint8_t)str[pos+1] & 0x1F) ^ 0x10;
-		bytes[pos/2] = (uint8_t)(hashmap[idx0] << 4) | hashmap[idx1];
-	};
+	for (pos = 0; ((pos < (blen * 2)) && (pos < strlen(str))); pos += 2) {
+		idx0 = ((uint8_t)str[pos + 0] & 0x1F) ^ 0x10;
+		idx1 = ((uint8_t)str[pos + 1] & 0x1F) ^ 0x10;
+		bytes[pos / 2] = (uint8_t)(hashmap[idx0] << 4) | hashmap[idx1];
+	}
+	;
 }
 
-int verify_data_hash_sha256(char* data, int data_len, unsigned char *hash_b16, size_t hash_b16_len)
+int verify_data_hash_sha256(char *data, int data_len, unsigned char *hash_b16, size_t hash_b16_len)
 {
 	unsigned char hash_output[32]; /* SHA-256 outputs 32 bytes */
 	unsigned char decoded_hash_input[100];
@@ -416,67 +417,67 @@ int verify_data_hash_sha256(char* data, int data_len, unsigned char *hash_b16, s
 	return TUF_SUCCESS;
 }
 
-int verify_signature(const char* data, int data_len, unsigned char* signature_bytes, int signature_bytes_len, struct tuf_key *key)
+int verify_signature(const char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
 {
-
 	int ret = 1;
 	int exit_code = -1;
 	size_t i;
 	mbedtls_pk_context pk;
 	unsigned char hash[32];
 	unsigned char *key_pem = key->keyval;
+	char decoded_bytes[9000];
+	size_t decoded_len;
+	int ret64;
 
-	mbedtls_pk_init( &pk );
+	mbedtls_pk_init(&pk);
 
 	// log_debug("\n\nTrying to verify signature\n%.*s\nwith key\n%s\nfor data\n%.*s\n\n", signature_bytes_len, signature_bytes, key_pem, data_len, data);
 
 	unsigned char cleaned_up_key_b64[TUF_BIG_CHUNK];
+
 	memset(cleaned_up_key_b64, 0, sizeof(cleaned_up_key_b64));
 	strcpy(cleaned_up_key_b64, key_pem);
 	replace_escape_chars_from_b64_string(cleaned_up_key_b64);
 
-	if ((ret = mbedtls_pk_parse_public_key(&pk, cleaned_up_key_b64, strlen(cleaned_up_key_b64) + 1) ) != 0) {
+	if ((ret = mbedtls_pk_parse_public_key(&pk, cleaned_up_key_b64, strlen(cleaned_up_key_b64) + 1)) != 0) {
 		log_error("verify_signature: failed. Could not read key. mbedtls_pk_parse_public_keyfile returned %d\n", ret);
 		log_error("key: %s\n", cleaned_up_key_b64);
 		goto exit;
 	}
 
-	if (!mbedtls_pk_can_do( &pk, MBEDTLS_PK_RSA ))	{
+	if (!mbedtls_pk_can_do(&pk, MBEDTLS_PK_RSA)) {
 		log_error("verify_signature: failed  ! Key is not an RSA key\n");
 		goto exit;
 	}
 
-	if((ret = mbedtls_rsa_set_padding(mbedtls_pk_rsa(pk),
-						MBEDTLS_RSA_PKCS_V21,
-						MBEDTLS_MD_SHA256)) != 0) {
+	if ((ret = mbedtls_rsa_set_padding(mbedtls_pk_rsa(pk),
+					   MBEDTLS_RSA_PKCS_V21,
+					   MBEDTLS_MD_SHA256)) != 0) {
 		log_error("verify_signature: failed  ! Invalid padding\n");
 		goto exit;
 	}
 
 	/*
-	* Compute the SHA-256 hash of the input file and
-	* verify the signature
-	*/
+	 * Compute the SHA-256 hash of the input file and
+	 * verify the signature
+	 */
 	char error_buf[900];
 
 	if ((ret = mbedtls_md(
-			mbedtls_md_info_from_type( MBEDTLS_MD_SHA256 ),
-			data, data_len, hash ) ) != 0) {
+		     mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
+		     data, data_len, hash)) != 0) {
 		log_error("verify_signature: failed ! Could not open or read\n");
 		goto exit;
 	}
 
+	ret64 = mbedtls_base64_decode(decoded_bytes, 9000, &decoded_len, signature_bytes, signature_bytes_len);
 
-	char decoded_bytes[9000];
-	size_t decoded_len;
-
-	int ret64 = mbedtls_base64_decode(decoded_bytes, 9000, &decoded_len, signature_bytes, signature_bytes_len);
 	mbedtls_strerror(ret64, error_buf, sizeof(error_buf));
 	// log_debug("b64 ret = %d (%s) decoded_len=%d\n", ret64, error_buf, decoded_len);
 
-	if ((ret = mbedtls_pk_verify( &pk, MBEDTLS_MD_SHA256, hash, 0,
-				decoded_bytes, decoded_len)) != 0) {
-		log_error("verify_signature: failed  ! mbedtls_pk_verify returned %d\n", ret );
+	if ((ret = mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, hash, 0,
+				     decoded_bytes, decoded_len)) != 0) {
+		log_error("verify_signature: failed  ! mbedtls_pk_verify returned %d\n", ret);
 		exit_code = ret;
 		goto exit;
 	}
@@ -486,16 +487,16 @@ int verify_signature(const char* data, int data_len, unsigned char* signature_by
 	exit_code = 0;
 
 exit:
-	mbedtls_pk_free( &pk );
+	mbedtls_pk_free(&pk);
 
-	return( exit_code );
+	return exit_code;
 }
 
-int get_key_by_id(struct tuf_root *root, const char* key_id, struct tuf_key **key)
+int get_key_by_id(struct tuf_root *root, const char *key_id, struct tuf_key **key)
 {
 	int i;
 
-	for (i=0; i<TUF_MAX_KEY_COUNT; i++) {
+	for (i = 0; i < TUF_MAX_KEY_COUNT; i++) {
 		if (!strcmp(root->keys[i].id, key_id)) {
 			*key = &root->keys[i];
 			return 0;
@@ -506,17 +507,20 @@ int get_key_by_id(struct tuf_root *root, const char* key_id, struct tuf_key **ke
 
 int get_public_key_for_role(struct tuf_root *root, enum tuf_role role, int key_index, struct tuf_key **key)
 {
+	char *keyid;
+
 	if (role >= TUF_ROLES_COUNT)
 		return -EINVAL;
 
 	if (root == NULL)
 		return -EINVAL;
 
-	char *keyid = root->roles[role].keyids[key_index];
+	keyid = root->roles[role].keyids[key_index];
+
 	return get_key_by_id(root, keyid, key);
 }
 
-int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, const char* key_id, struct tuf_key **key)
+int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, const char *key_id, struct tuf_key **key)
 {
 	// log_debug("get_public_key_by_id_and_role role=%d key_id=%s\n", role, key_id);
 
@@ -526,12 +530,11 @@ int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, con
 	if (root == NULL)
 		return -EINVAL;
 
-	for (int key_index=0; key_index< TUF_KEYIDS_PER_ROLE_MAX_COUNT; key_index++) {
+	for (int key_index = 0; key_index < TUF_KEYIDS_PER_ROLE_MAX_COUNT; key_index++) {
 		char *role_key_id = root->roles[role].keyids[key_index];
 		// log_debug("Comparing\n'%s'\n'%s'\n", role_key_id, key_id);
-		if (!strcmp(role_key_id, key_id)) {
+		if (!strcmp(role_key_id, key_id))
 			return get_key_by_id(root, key_id, key);
-		}
 	}
 	// log_error("key_id %s for role %d not found\n", key_id, role);
 
@@ -544,20 +547,18 @@ int verify_data_signature_for_role(const char *signed_value, size_t signed_value
 	int signature_index;
 	int threshold;
 	int valid_signatures_count = 0;
+	struct tuf_key *key;
 
 	threshold = updater.root.roles[role].threshold;
-	for (signature_index=0; signature_index < TUF_SIGNATURES_MAX_COUNT && valid_signatures_count < threshold; signature_index++)
-	{
+	for (signature_index = 0; signature_index < TUF_SIGNATURES_MAX_COUNT && valid_signatures_count < threshold; signature_index++) {
 		// log_debug("verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
 		if (!signatures[signature_index].set)
 			break;
 
-		struct tuf_key* key;
 		ret = get_public_key_by_id_and_role(root, role, signatures[signature_index].keyid, &key);
-		if (ret != 0) {
+		if (ret != 0)
 			// log_debug("get_public_key_by_id_and_role: not found. verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
 			continue;
-		}
 		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, strlen(signatures[signature_index].sig), key);
 
 		if (!ret) {
@@ -688,7 +689,7 @@ int parse_tuf_file_info(char *data, size_t len, struct tuf_role_file *target)
 		log_error("parse_timestamp_signed_metadata: \"hashes/sha256\" not found\n");
 		return TUF_ERROR_FIELD_MISSING;
 	}
-	strncpy((char*)target->hash_sha256, outValue, outValueLength);
+	strncpy((char *)target->hash_sha256, outValue, outValueLength);
 
 	result = JSON_Search(data, len, "length", strlen("length"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
@@ -716,8 +717,7 @@ int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *t
 
 	memset(target, 0, sizeof(*target));
 	result = JSON_Validate(data, len);
-	if( result != JSONSuccess )
-	{
+	if (result != JSONSuccess) {
 		log_error("parse_timestamp_signed_metadata: Got invalid JSON: %s\n", data);
 		return TUF_ERROR_INVALID_METADATA;
 	}
@@ -729,9 +729,8 @@ int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *t
 	}
 
 	ret = parse_tuf_file_info(outValue, outValueLength, &target->snapshot_file);
-	if (ret < 0) {
+	if (ret < 0)
 		return ret;
-	}
 
 	target->loaded = true;
 
@@ -778,9 +777,9 @@ int update_timestamp(const unsigned char *data, size_t len, bool check_signature
 		}
 	}
 
-        /*
+	/*
 	 * expiry not checked to allow old timestamp to be used for rollback
-         * protection of new timestamp: expiry is checked in update_snapshot()
+	 * protection of new timestamp: expiry is checked in update_snapshot()
 	 */
 
 	memcpy(&updater.timestamp, &new_timestamp, sizeof(updater.timestamp));
@@ -796,8 +795,7 @@ int parse_snapshot_signed_metadata(char *data, int len, struct tuf_snapshot *tar
 
 	memset(target, 0, sizeof(*target));
 	result = JSON_Validate(data, len);
-	if( result != JSONSuccess )
-	{
+	if (result != JSONSuccess) {
 		log_error("parse_snapshot_signed_metadata: Got invalid JSON: %s\n", data);
 		return TUF_ERROR_INVALID_METADATA;
 	}
@@ -835,8 +833,7 @@ int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 
 	memset(target, 0, sizeof(*target));
 	result = JSON_Validate(data, len);
-	if( result != JSONSuccess )
-	{
+	if (result != JSONSuccess) {
 		log_error("parse_targets_metadata: Got invalid JSON: %s\n", data);
 		return TUF_ERROR_INVALID_METADATA;
 	}
@@ -866,7 +863,7 @@ int parse_targets_metadata(char *data, int len, struct tuf_targets *target)
 
 int check_final_timestamp()
 {
-        // Return error if timestamp is expired
+	// Return error if timestamp is expired
 	if (!updater.timestamp.loaded) {
 		log_error("BUG: !updater.timestamp.loaded\n");
 		return TUF_ERROR_BUG;
@@ -882,7 +879,7 @@ int check_final_timestamp()
 
 int check_final_snapshot()
 {
-        // Return error if snapshot is expired or meta version does not match
+	// Return error if snapshot is expired or meta version does not match
 
 	if (!updater.snapshot.loaded) {
 		log_error("BUG: !updater.snapshot.loaded\n");
@@ -917,20 +914,20 @@ int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 
 	memset(&new_snapshot, 0, sizeof(new_snapshot));
 
-        log_debug("Updating snapshot");
+	log_debug("Updating snapshot");
 
-        if (!updater.timestamp.loaded) {
-            log_error("Cannot update snapshot before timestamp");
-	    return TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED;
+	if (!updater.timestamp.loaded) {
+		log_error("Cannot update snapshot before timestamp");
+		return TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED;
 	}
 
-        if (updater.targets.loaded) {
-            log_error("Cannot update snapshot after targets");
-	    return TUF_ERROR_TARGETS_ROLE_LOADED;
+	if (updater.targets.loaded) {
+		log_error("Cannot update snapshot after targets");
+		return TUF_ERROR_TARGETS_ROLE_LOADED;
 	}
 
-        // Snapshot cannot be loaded if final timestamp is expired
-        ret = check_final_timestamp();
+	// Snapshot cannot be loaded if final timestamp is expired
+	ret = check_final_timestamp();
 	if (ret < 0)
 		return ret;
 
@@ -942,11 +939,11 @@ int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 	if (ret < 0)
 		return ret;
 
-        // version not checked against meta version to allow old snapshot to be
-        // used in rollback protection: it is checked when targets is updated
+	// version not checked against meta version to allow old snapshot to be
+	// used in rollback protection: it is checked when targets is updated
 
-        // # If an existing trusted snapshot is updated, check for rollback attack
-        if (updater.snapshot.loaded) {
+	// # If an existing trusted snapshot is updated, check for rollback attack
+	if (updater.snapshot.loaded) {
 		/* Prevent removal of any metadata in meta */
 		if (updater.snapshot.root_file.loaded && !new_snapshot.root_file.loaded) {
 			log_error("New snapshot is missing info for 'root'\n");
@@ -970,17 +967,16 @@ int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 			log_error("Expected targets version >= %d, got %d\n", updater.snapshot.targets_file.version, new_snapshot.targets_file.version);
 			return TUF_ERROR_BAD_VERSION_NUMBER;
 		}
-
 	}
 
-        // expiry not checked to allow old snapshot to be used for rollback
-        // protection of new snapshot: it is checked when targets is updated
+	// expiry not checked to allow old snapshot to be used for rollback
+	// protection of new snapshot: it is checked when targets is updated
 
 	memcpy(&updater.snapshot, &new_snapshot, sizeof(updater.snapshot));
 	log_info("Updated snapshot v%d\n", new_snapshot.targets_file.version);
 
-        // snapshot is loaded, but we raise if it's not valid _final_ snapshot
-        ret = check_final_snapshot();
+	// snapshot is loaded, but we raise if it's not valid _final_ snapshot
+	ret = check_final_snapshot();
 	if (ret < 0)
 		return ret;
 
@@ -1003,8 +999,8 @@ int update_targets(const unsigned char *data, size_t len, bool check_signature)
 		return TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED;
 	}
 
-        // Targets cannot be loaded if final snapshot is expired or its version
-        // does not match meta version in timestamp
+	// Targets cannot be loaded if final snapshot is expired or its version
+	// does not match meta version in timestamp
 	ret = check_final_snapshot();
 	if (ret < 0)
 		return ret;
@@ -1028,13 +1024,13 @@ int update_targets(const unsigned char *data, size_t len, bool check_signature)
 		return TUF_ERROR_BAD_VERSION_NUMBER;
 	}
 
-	if (is_expired(new_targets.base.expires_epoch, updater.reference_time))	{
+	if (is_expired(new_targets.base.expires_epoch, updater.reference_time)) {
 		log_error("New targets is expired\n");
 		return TUF_ERROR_EXPIRED_METADATA;
 	}
 
 	memcpy(&updater.targets, &new_targets, sizeof(updater.targets));
-        log_debug("Updated targets v%d\n", new_targets.base.version);
+	log_debug("Updated targets v%d\n", new_targets.base.version);
 
 	return TUF_SUCCESS;
 }
@@ -1078,6 +1074,7 @@ int load_root()
 	// Update the root role
 	size_t file_size;
 	int ret;
+	int lower_bound, upper_bound, next_version;
 
 	ret = load_local_metadata(ROLE_ROOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
@@ -1089,10 +1086,10 @@ int load_root()
 	if (ret < 0)
 		return ret;
 
-        int lower_bound = updater.root.base.version + 1;
-        int upper_bound = lower_bound + config.max_root_rotations;
+	lower_bound = updater.root.base.version + 1;
+	upper_bound = lower_bound + config.max_root_rotations;
 
-        for (int next_version = lower_bound; next_version < upper_bound; next_version++) {
+	for (next_version = lower_bound; next_version < upper_bound; next_version++) {
 		ret = download_metadata(ROLE_ROOT, updater.data_buffer, updater.data_buffer_len, next_version, &file_size);
 		if (ret < 0) {
 			if (ret == TUF_HTTP_NOT_FOUND || ret == TUF_HTTP_FORBIDDEN)
@@ -1139,9 +1136,9 @@ int load_timestamp()
 int load_snapshot()
 {
 	/* Load local (and if needed remote) snapshot metadata */
-
 	size_t file_size;
 	int ret;
+	size_t max_length;
 
 	ret = load_local_metadata(ROLE_SNAPSHOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
@@ -1159,7 +1156,7 @@ int load_snapshot()
 		return TUF_ERROR_BUG;
 	}
 
-	size_t max_length = config.snapshot_max_length;
+	max_length = config.snapshot_max_length;
 	if (updater.timestamp.snapshot_file.length)
 		max_length = updater.timestamp.snapshot_file.length;
 
@@ -1176,10 +1173,11 @@ int load_snapshot()
 
 int load_targets()
 {
-	log_debug("load_targets: begin\n");
 	size_t file_size;
 	int ret;
+	size_t max_length;
 
+	log_debug("load_targets: begin\n");
 	// Avoid loading 'role' more than once during "get_targetinfo" -> TODO: does this apply to us?
 	if (updater.targets.loaded)
 		return TUF_SUCCESS;
@@ -1191,8 +1189,7 @@ int load_targets()
 		ret = update_targets(updater.data_buffer, file_size, true);
 		if (ret < 0) {
 			log_debug("local targets is not valid. Proceeding\n");
-		}
-		else {
+		} else {
 			log_debug("local targets is valid: not downloading new one\n");
 			return TUF_SUCCESS;
 		}
@@ -1203,7 +1200,8 @@ int load_targets()
 		return TUF_ERROR_BUG;
 	}
 
-	size_t max_length = config.targets_max_length;
+	max_length = config.targets_max_length;
+
 	if (updater.snapshot.targets_file.length)
 		max_length = updater.snapshot.targets_file.length;
 
@@ -1220,7 +1218,7 @@ int load_targets()
 
 int refresh()
 {
-        // static unsigned char data_buffer[DATA_BUFFER_LEN];
+	// static unsigned char data_buffer[DATA_BUFFER_LEN];
 	int ret;
 
 	// memset(&updater, 0, sizeof(updater));

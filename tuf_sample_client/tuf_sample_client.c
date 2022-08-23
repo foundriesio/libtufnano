@@ -1,6 +1,6 @@
 /*
  * Sample TUF client. The code from this file will be part of aktalizr-nano
- * It still has some code from the original PoC code, separation between app 
+ * It still has some code from the original PoC code, separation between app
  *  and aktalizr-nano is ongoing
  */
 
@@ -19,7 +19,6 @@
 #include "mbedtls/sha256.h"
 #include "mbedtls/platform_time.h"
 #include "core_json.h"
-
 
 
 #define CANCEL_BASE_SIZE 50
@@ -80,8 +79,8 @@
 
 
 struct aknano_target {
-	char updatedAt[AKNANO_MAX_UPDATE_AT_LENGTH];
-	char uri[AKNANO_MAX_URI_LENGTH];
+	char	updatedAt[AKNANO_MAX_UPDATE_AT_LENGTH];
+	char	uri[AKNANO_MAX_URI_LENGTH];
 	int32_t version;
 };
 
@@ -101,9 +100,9 @@ struct aknano_target {
 
 /* Settings are kept between iterations */
 struct aknano_settings {
-	char tag[AKNANO_MAX_TAG_LENGTH];
+	char		tag[AKNANO_MAX_TAG_LENGTH];
 	// char token[AKNANO_MAX_TOKEN_LENGTH];
-	const char *hwid;
+	const char *	hwid;
 	// char device_certificate[AKNANO_CERT_BUF_SIZE];
 	// char device_priv_key[AKNANO_CERT_BUF_SIZE];
 	// char device_name[AKNANO_MAX_DEVICE_NAME_SIZE];
@@ -139,7 +138,7 @@ struct aknano_context {
 	// enum aknano_response code_status;
 
 	struct aknano_settings *settings;
-	struct aknano_target selected_target;
+	struct aknano_target	selected_target;
 };
 
 static struct aknano_context aknano_context;
@@ -149,7 +148,7 @@ static struct aknano_settings aknano_settings;
 
 int tuf_targets_processing_done(void *application_context)
 {
-	struct aknano_context *context = (struct aknano_context*)application_context;
+	struct aknano_context *context = (struct aknano_context *)application_context;
 
 	log_debug("tuf_targets_processing_done: highest version %d uri = %s\n", context->selected_target.version, context->selected_target.uri);
 	return 0;
@@ -173,6 +172,7 @@ void *tuf_get_application_context()
 int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const char *data, size_t len, void *application_context)
 {
 	struct aknano_context *aknano_context = (struct aknano_context *)application_context;
+
 #if 0
 	JSONStatus_t result;
 	char *outValue, *outSubValue;//, *uri;
@@ -180,7 +180,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	// size_t start = 0, next = 0;
 	// JSONPair_t pair;
 	int ret;
-	struct aknano_context *context = (struct aknano_context*)application_context;
+	struct aknano_context *context = (struct aknano_context *)application_context;
 
 	result = JSON_Search(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
@@ -202,9 +202,8 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	uint32_t version;
 
 	// LogInfo(("handle_json_data: Parsing target data with len=%d", len));
-	JSONStatus_t result = JSON_Validate(data, len );
-	if( result != JSONSuccess )
-	{
+	JSONStatus_t result = JSON_Validate(data, len);
+	if (result != JSONSuccess) {
 		log_debug("handle_json_data: Got invalid targets JSON: %s\n", data);
 		return -1;
 	}
@@ -215,9 +214,8 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.version=%.*s", outValueLength, outValue));
 		sscanf(outValue, "%u", &version);
-		if (version <= aknano_context->selected_target.version) {
+		if (version <= aknano_context->selected_target.version)
 			return 0;
-		}
 	} else {
 		log_debug("handle_json_data: custom/version not found\n");
 		return -2;
@@ -227,48 +225,44 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.hardwareIds=%.*s", outValueLength, outValue));
 
-		for (i=0; i<JSON_ARRAY_LIMIT_COUNT; i++) {
+		for (i = 0; i < JSON_ARRAY_LIMIT_COUNT; i++) {
 			char s[10];
 			snprintf(s, sizeof(s), "[%d]", i);
 			if (JSON_Search(outValue, outValueLength, s, strlen(s), &outSubValue, &outSubValueLength) != JSONSuccess)
-					break;
-			if (strncmp(outSubValue, aknano_context->settings->hwid, outSubValueLength) == 0) {
+				break;
+			if (strncmp(outSubValue, aknano_context->settings->hwid, outSubValueLength) == 0)
 				// LogInfo(("Found matching hardwareId" ));
 				foundMatch = true;
-			}
 		}
 	} else {
 		log_debug("handle_json_data: custom/hardwareIds not found\n");
 		return -2;
 	}
-	if (!foundMatch) {
+	if (!foundMatch)
 		// LogInfo(("Matching hardwareId not found (%s)", CONFIG_BOARD));
 		return 0;
-	}
 
 	foundMatch = false;
-	result = JSON_Search((char*)data, len, "custom/tags", strlen("custom/tags"), &outValue, &outValueLength);
+	result = JSON_Search((char *)data, len, "custom/tags", strlen("custom/tags"), &outValue, &outValueLength);
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.tags=%.*s", outValueLength, outValue));
 
-		for (i=0; i<JSON_ARRAY_LIMIT_COUNT; i++) {
+		for (i = 0; i < JSON_ARRAY_LIMIT_COUNT; i++) {
 			char s[10];
 			snprintf(s, sizeof(s), "[%d]", i);
 			if (JSON_Search(outValue, outValueLength, s, strlen(s), &outSubValue, &outSubValueLength) != JSONSuccess)
 				break;
-			if (strncmp(outSubValue, aknano_context->settings->tag, outSubValueLength) == 0) {
+			if (strncmp(outSubValue, aknano_context->settings->tag, outSubValueLength) == 0)
 				// LogInfo(("Found matching tag" ));
 				foundMatch = true;
-			}
 		}
 	} else {
 		log_debug("handle_json_data: custom/tags not found\n");
 		return -2;
 	}
-	if (!foundMatch) {
+	if (!foundMatch)
 		// LogInfo(("Matching tag not found (%s)", aknano_context->settings->tag));
 		return 0;
-	}
 
 	// result = JSON_Search(data, len, "custom.updatedAt", strlen("custom.updatedAt"), &outValue, &outValueLength);
 	// if (result == JSONSuccess) {

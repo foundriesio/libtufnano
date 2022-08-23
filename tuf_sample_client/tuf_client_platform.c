@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#define ____USE_XOPEN 
+#define ____USE_XOPEN
 #define _GNU_SOURCE
 #include <time.h>
 
@@ -23,17 +23,18 @@ time_t get_current_gmt_time()
 
 	time(&current_time);
 	tm = gmtime(&current_time);
-	tm->tm_isdst = 0; /* ignore DST */
+	tm->tm_isdst = 0;               /* ignore DST */
 	current_time = mktime(tm);
-	current_time += tm->tm_gmtoff; /* compensate locale */
+	current_time += tm->tm_gmtoff;  /* compensate locale */
 	return current_time;
 }
 
 /* read_file function */
-size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit, const char* base_path, size_t *file_size)
+size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit, const char *base_path, size_t *file_size)
 {
 	char file_path[MAX_FILE_PATH_LEN];
 	size_t ret;
+	FILE *f;
 
 	if (limit <= 0) {
 		log_error("read_file_posix: Invalid limit %ld\n", limit);
@@ -41,7 +42,7 @@ size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit,
 	}
 
 	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
-	FILE *f = fopen(file_path, "rb");
+	f = fopen(file_path, "rb");
 	if (f == NULL) {
 		log_error("Unable to read open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
 		return -errno;
@@ -55,13 +56,15 @@ size_t read_file_posix(const char* base_name, char* output_buffer, size_t limit,
 	return TUF_SUCCESS;
 }
 
-size_t write_file_posix(const char* base_name, const char* data, size_t len, const char* base_path)
+size_t write_file_posix(const char *base_name, const char *data, size_t len, const char *base_path)
 {
 	char file_path[MAX_FILE_PATH_LEN];
 	size_t ret;
+	FILE *f;
 
 	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
-	FILE *f = fopen(file_path, "wb");
+	f = fopen(file_path, "wb");
+
 	if (f == NULL) {
 		log_error("Unable to write open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
 		return -errno;
@@ -74,7 +77,7 @@ size_t write_file_posix(const char* base_name, const char* data, size_t len, con
 	return TUF_SUCCESS;
 }
 
-int remove_local_file_posix(const char* base_name, char* base_path)
+int remove_local_file_posix(const char *base_name, char *base_path)
 {
 	char file_path[MAX_FILE_PATH_LEN];
 	size_t ret;
@@ -87,6 +90,7 @@ int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t 
 {
 	/* For now, simulating files download using local copies */
 	int ret = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_TEST_FILES_PATH, file_size);
+
 	// log_debug("fetch_file ret=%d\n", ret);
 	if (ret < 0)
 		return TUF_HTTP_NOT_FOUND;
