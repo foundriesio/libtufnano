@@ -498,7 +498,7 @@ TEST( Full_LibTufNAno, libTufNano_TestSha256 )
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
 	ret = verify_file_hash("timestamp.json", "targets.json.sha256");
-	TEST_ASSERT_EQUAL(TUF_HASH_VERIFY_ERROR, ret);
+	TEST_ASSERT_EQUAL(TUF_ERROR_HASH_VERIFY_ERROR, ret);
 }
 
 TEST( Full_LibTufNAno, libTufNano_TestFullLoadRootOperation )

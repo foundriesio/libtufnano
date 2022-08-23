@@ -68,12 +68,12 @@ time_t datetime_string_to_epoch(const char *s, time_t *epoch)
 	ret = strptime(s, "%Y-%m-%dT%H:%M:%SZ", &tm);
 	if (ret == NULL) {
 		log_error("Invalid datetime string %s\n", s);
-		return TUF_INVALID_DATE_TIME;
+		return TUF_ERROR_INVALID_DATE_TIME;
 	}
 	tm.tm_isdst = 0; /* ignore DST */
 	*epoch = mktime(&tm);
 	if (*epoch < 0)
-		return TUF_INVALID_DATE_TIME;
+		return TUF_ERROR_INVALID_DATE_TIME;
 	*epoch += tm.tm_gmtoff; /* compensate locale */
 	return TUF_SUCCESS;
 }
@@ -398,7 +398,7 @@ int verify_data_hash_sha256(char* data, int data_len, unsigned char *hash_b16, s
 
 	if (hash_b16_len != 64) {
 		log_error("Invalid hash length %ld - %s\n", hash_b16_len, hash_b16);
-		return TUF_INVALID_HASH_LENGTH;
+		return TUF_ERROR_INVALID_HASH_LENGTH;
 	}
 
 
@@ -410,7 +410,7 @@ int verify_data_hash_sha256(char* data, int data_len, unsigned char *hash_b16, s
 		log_debug("Hash Verify Error\n");
 		print_hex("Expected", decoded_hash_input, 32);
 		print_hex("Got", hash_output, 32);
-		return TUF_HASH_VERIFY_ERROR;
+		return TUF_ERROR_HASH_VERIFY_ERROR;
 	}
 
 	return TUF_SUCCESS;
@@ -603,7 +603,7 @@ int verify_length_and_hashes(const char *data, size_t len, enum tuf_role role)
 
 	if (len != expected_length) {
 		log_error("Expected %s length %ld, got %ld\n", get_role_name(role), expected_length, len);
-		return TUF_LENGTH_VERIFY_ERROR;
+		return TUF_ERROR_LENGTH_VERIFY_ERROR;
 	}
 
 	ret = verify_data_hash_sha256(data, len, expected_sha256, strlen(expected_sha256));
