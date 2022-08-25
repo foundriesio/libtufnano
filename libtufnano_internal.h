@@ -21,6 +21,11 @@
 #define _SNAPSHOT "snapshot"
 #define _TARGETS "targets"
 #define _TIMESTAMP "timestamp"
+// const char *_ROOT = "root";
+// const char *_SNAPSHOT = "snapshot";
+// const char *_TARGETS = "targets";
+// const char *_TIMESTAMP = "timestamp";
+
 
 #define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa"
 
@@ -131,32 +136,12 @@ struct tuf_config {
 };
 
 time_t get_current_gmt_time();
-int verify_data_signature_for_role(const char *signed_value, size_t signed_value_len, struct tuf_signature *signatures, enum tuf_role role, struct tuf_root *root);
 
 const char *get_role_name(enum tuf_role role);
-int verify_data_hash_sha256(char *data, int data_len, unsigned char *hash_b16, size_t hash_b16_len);
-int verify_signature(const char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key);
-
-int split_metadata(const char *data, int len, struct tuf_signature *signatures, int signatures_max_count, char **signed_value, int *signed_value_len);
-int split_metadata_and_check_signature(const char *data, size_t file_size, enum tuf_role role, struct tuf_signature *signatures, char **signed_value, int *signed_value_len, bool check_signature_and_hashes);
-
-int get_public_key_for_role(struct tuf_root *root, enum tuf_role role, int key_index, struct tuf_key **key);
-
-void load_config();
-
-int load_root();
-int load_timestamp();
-int load_snapshot();
-int load_targets();
-
-int parse_snapshot_signed_metadata(char *data, int len, struct tuf_snapshot *target);
-int parse_timestamp_signed_metadata(char *data, int len, struct tuf_timestamp *target);
-int parse_root_signed_metadata(char *data, int len, struct tuf_root *target);
 
 size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit, const char *base_path, size_t *file_size);
 size_t write_file_posix(const char *base_name, const char *data, size_t len, const char *base_path);
 int remove_local_file_posix(const char *base_name, char *base_path);
 int remove_local_role_file(enum tuf_role role);
-int remove_all_local_role_files();
 
 #endif

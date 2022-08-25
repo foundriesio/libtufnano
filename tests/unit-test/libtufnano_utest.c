@@ -13,6 +13,7 @@
 #include "unity_fixture.h"
 
 #include "libtufnano.h"
+#include "libtufnano.c"
 #include "libtufnano_internal.h"
 
 extern struct tuf_updater updater;
