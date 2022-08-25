@@ -8,7 +8,6 @@
 #include <unistd.h>
 #include <ctype.h>
 
-// #include "mbedtls/md.h"
 #include "mbedtls/pem.h"
 #include "mbedtls/pk.h"
 #include "mbedtls/base64.h"
@@ -304,6 +303,7 @@ static int split_metadata(const unsigned char *data, int len, struct tuf_signatu
 			return TUF_ERROR_FIELD_MISSING;
 		}
 
+		/* only rsassa-pss-sha256 is supported for now */
 		if (strncmp(out_value_internal, "rsassa-pss-sha256", value_length_internal) != 0) {
 			log_error("unsupported signature method \"%.*s\". Skipping\n", (int)value_length_internal, out_value_internal);
 			continue;
@@ -341,6 +341,7 @@ static void print_hex(const char *title, const unsigned char buf[], size_t len)
 	log_debug("\r\n");
 }
 
+/* TODO: Verify safety of this function */
 static void hextobin(const char *str, uint8_t *bytes, size_t blen)
 {
 	uint8_t pos, idx0, idx1;
@@ -361,36 +362,37 @@ static void hextobin(const char *str, uint8_t *bytes, size_t blen)
 	;
 }
 
-static int verify_data_hash_sha256(const unsigned char *data, int data_len, unsigned char *hash_b16, size_t hash_b16_len)
+static int verify_data_hash_sha256(const unsigned char *data, int data_len, unsigned char *expected_hash256, size_t hash_len)
 {
-	unsigned char hash_output[32]; /* SHA-256 outputs 32 bytes */
-	unsigned char decoded_hash_input[100];
+	unsigned char hash_output[TUF_HASH256_LEN]; /* SHA-256 outputs 32 bytes */
 
-	if (hash_b16_len != 64) {
-		log_error("Invalid hash length %ld - %s\n", hash_b16_len, hash_b16);
+	if (hash_len != TUF_HASH256_LEN) {
+		log_error("Invalid hash length %ld\n", hash_len);
 		return TUF_ERROR_INVALID_HASH_LENGTH;
 	}
 
 	/* 0 here means use the full SHA-256, not the SHA-224 variant */
 	mbedtls_sha256(data, data_len, hash_output, 0);
 
-	hextobin((const char *)hash_b16, decoded_hash_input, hash_b16_len);
-	if (memcmp(decoded_hash_input, hash_output, sizeof(hash_output))) {
+	if (memcmp(expected_hash256, hash_output, sizeof(hash_output))) {
 		log_debug("Hash Verify Error\n");
-		print_hex("Expected", decoded_hash_input, 32);
-		print_hex("Got", hash_output, 32);
+		print_hex("Expected", expected_hash256, TUF_HASH256_LEN);
+		print_hex("Got", hash_output, TUF_HASH256_LEN);
 		return TUF_ERROR_HASH_VERIFY_ERROR;
 	}
 
 	return TUF_SUCCESS;
 }
 
+/*
+ * verify_signature: rsassa-pss-sha256 mode only
+ */
 static int verify_signature(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
 {
 	int ret;
 	int exit_code = -1;
 	mbedtls_pk_context pk;
-	unsigned char hash[32];
+	unsigned char hash[TUF_HASH256_LEN];
 	const char *key_pem = (const char *)key->keyval;
 	unsigned char decoded_bytes[TUF_BIG_CHUNK];
 	size_t decoded_len;
@@ -410,14 +412,14 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 	}
 
 	if (!mbedtls_pk_can_do(&pk, MBEDTLS_PK_RSA)) {
-		log_error("verify_signature: failed  ! Key is not an RSA key\n");
+		log_error("verify_signature: Key is not an RSA key\n");
 		goto exit;
 	}
 
 	if ((ret = mbedtls_rsa_set_padding(mbedtls_pk_rsa(pk),
 					   MBEDTLS_RSA_PKCS_V21,
 					   MBEDTLS_MD_SHA256)) != 0) {
-		log_error("verify_signature: failed  ! Invalid padding\n");
+		log_error("verify_signature: Invalid padding\n");
 		goto exit;
 	}
 
@@ -428,13 +430,13 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 	if ((ret = mbedtls_md(
 		     mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
 		     data, data_len, hash)) != 0) {
-		log_error("verify_signature: failed ! Could not open or read\n");
+		log_error("verify_signature: Could not open or read\n");
 		goto exit;
 	}
 
 	ret64 = mbedtls_base64_decode(decoded_bytes, TUF_BIG_CHUNK, &decoded_len, signature_bytes, signature_bytes_len);
 	if (ret64 != 0) {
-		log_error("verify_signature: error decoding base64 string\n");
+		log_error("verify_signature: Error decoding base64 string\n");
 		goto exit;
 	}
 
@@ -553,7 +555,7 @@ static int verify_length_and_hashes(const unsigned char *data, size_t len, enum 
 		return TUF_ERROR_LENGTH_VERIFY_ERROR;
 	}
 
-	ret = verify_data_hash_sha256(data, len, expected_sha256, strlen((char *)expected_sha256));
+	ret = verify_data_hash_sha256(data, len, expected_sha256, TUF_HASH256_LEN);
 	if (ret != TUF_SUCCESS)
 		return ret;
 
@@ -633,7 +635,12 @@ static int parse_tuf_file_info(const char *data, size_t len, struct tuf_role_fil
 		log_error("parse_timestamp_signed_metadata: \"hashes/sha256\" not found\n");
 		return TUF_ERROR_FIELD_MISSING;
 	}
-	strncpy((char *)target->hash_sha256, out_value, out_value_len);
+
+	if (out_value_len != TUF_HASH256_LEN * 2) {
+		log_error("parse_timestamp_signed_metadata: invalid \"hashes/sha256\" length: %ld\n", out_value_len);
+		return TUF_ERROR_INVALID_FIELD_VALUE;
+	}
+	hextobin(out_value, target->hash_sha256, TUF_HASH256_LEN);
 
 	result = JSON_SearchConst(data, len, "length", strlen("length"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {

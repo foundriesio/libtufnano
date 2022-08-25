@@ -48,6 +48,7 @@
 /* TODO: save space in memory by keeping decoded bytes instead of base64 string */
 #define TUF_BIG_CHUNK 1024
 
+#define TUF_HASH256_LEN 32
 
 /* Data types */
 
@@ -73,7 +74,7 @@ struct tuf_metadata {
 struct tuf_role_file {
 	enum tuf_role	role;
 	size_t		length;
-	unsigned char	hash_sha256[65];
+	unsigned char	hash_sha256[TUF_HASH256_LEN];
 	int		version;
 	bool		loaded;
 };
@@ -94,7 +95,7 @@ struct tuf_snapshot {
 struct tuf_target {
 	int		version;
 	char *		file_name;
-	unsigned char	hash_sha256[65];
+	unsigned char	hash_sha256[TUF_HASH256_LEN];
 };
 
 struct tuf_targets {

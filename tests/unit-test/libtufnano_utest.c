@@ -176,7 +176,8 @@ int verify_file_signature(const char *file_base_name, const char *signing_key_fi
 /* for unit tests only */
 int verify_file_hash(const char *file_base_name, const char *sha256_file)
 {
-	unsigned char hash256_b16[TUF_BIG_CHUNK];
+	unsigned char hash256_b16[(TUF_HASH256_LEN * 2) + 2];
+	unsigned char hash256[TUF_HASH256_LEN];
 	size_t file_size, hash_file_size;
 	int ret;
 
@@ -188,8 +189,9 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 	if (ret < 0)
 		return -30;
 
+	hextobin(hash256_b16, hash256, TUF_HASH256_LEN);
 	log_debug("Verifying hash for %s\n", file_base_name);
-	return verify_data_hash_sha256(updater.data_buffer, file_size, hash256_b16, hash_file_size - 1);
+	return verify_data_hash_sha256(updater.data_buffer, file_size, hash256, TUF_HASH256_LEN);
 }
 
 
@@ -456,7 +458,7 @@ TEST(Full_LibTufNAno, libTufNano_TestTimestampLoad){
 
 	TEST_ASSERT_EQUAL(820, updater.timestamp.snapshot_file.length);
 	TEST_ASSERT_EQUAL(875, updater.timestamp.snapshot_file.version);
-	TEST_ASSERT_EQUAL_STRING("1119a2d55772f0cd7a94cbc916c8a28183f24542fd2e1377cd06be74f0aa328f", updater.timestamp.snapshot_file.hash_sha256);
+	TEST_ASSERT_EQUAL_CHAR_ARRAY("\x11\x19\xa2\xd5\x57\x72\xf0\xcd\x7a\x94\xcb\xc9\x16\xc8\xa2\x81\x83\xf2\x45\x42\xfd\x2e\x13\x77\xcd\x06\xbe\x74\xf0\xaa\x32\x8f", updater.timestamp.snapshot_file.hash_sha256, TUF_HASH256_LEN);
 
 	TEST_ASSERT_EQUAL_STRING("2022-09-09T18:13:01Z", updater.timestamp.base.expires);
 	TEST_ASSERT_EQUAL(1662747181, updater.timestamp.base.expires_epoch);
