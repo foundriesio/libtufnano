@@ -50,15 +50,6 @@ const char *get_role_name(enum tuf_role role)
 	}
 }
 
-static int remove_all_local_role_files()
-{
-	// TODO: Restore original 1.root.json
-	// remove_local_role_file(ROLE_ROOT);
-	remove_local_role_file(ROLE_TIMESTAMP);
-	remove_local_role_file(ROLE_SNAPSHOT);
-	remove_local_role_file(ROLE_TARGETS);
-}
-
 /**/
 static time_t datetime_string_to_epoch(const char *s, time_t *epoch)
 {
@@ -86,7 +77,7 @@ static bool is_expired(time_t expires, time_t reference_time)
 
 static void replace_escape_chars_from_b64_string(unsigned char *s)
 {
-	char *p = s;
+	unsigned char *p = s;
 	bool replace_next = false;
 
 	while (*p) {
@@ -262,7 +253,7 @@ static int parse_root_signed_metadata(const char *data, int len, struct tuf_root
 	return parse_base_metadata(data, len, ROLE_ROOT, &target->base);
 }
 
-static int split_metadata(const char *data, int len, struct tuf_signature *signatures, int signatures_max_count, const char **signed_value, int *signed_value_len)
+static int split_metadata(const unsigned char *data, int len, struct tuf_signature *signatures, int signatures_max_count, const unsigned char **signed_value, int *signed_value_len)
 {
 	JSONStatus_t result;
 	JSONStatus_t result_internal;
@@ -275,7 +266,7 @@ static int split_metadata(const char *data, int len, struct tuf_signature *signa
 	const char *out_value_internal;
 	struct tuf_signature *current_signature;
 
-	result = JSON_Validate(data, len);
+	result = JSON_Validate((const char *)data, len);
 	if (len <= 0)
 		return -EINVAL;
 	if (result != JSONSuccess) {
@@ -283,7 +274,7 @@ static int split_metadata(const char *data, int len, struct tuf_signature *signa
 		return TUF_ERROR_INVALID_METADATA;
 	}
 
-	result = JSON_SearchConst(data, len, "signatures", strlen("signatures"), &out_value, &out_value_len, NULL);
+	result = JSON_SearchConst((const char *)data, len, "signatures", strlen("signatures"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
 		log_error("handle_json_data: signatures not found\n");
 		return TUF_ERROR_FIELD_MISSING;
@@ -324,17 +315,17 @@ static int split_metadata(const char *data, int len, struct tuf_signature *signa
 			log_error("'sig' field not found\n");
 			return TUF_ERROR_FIELD_MISSING;
 		}
-		strncpy(current_signature->sig, out_value_internal, value_length_internal);
+		strncpy((char *)current_signature->sig, out_value_internal, value_length_internal);
 		current_signature->set = true;
 		signature_index++;
 	}
 
-	result = JSON_SearchConst(data, len, "signed", strlen("signed"), &out_value, &out_value_len, NULL);
+	result = JSON_SearchConst((const char *)data, len, "signed", strlen("signed"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
 		log_error("'signed' field not found");
 		return TUF_ERROR_FIELD_MISSING;
 	}
-	*signed_value = out_value;
+	*signed_value = (unsigned const char *)out_value;
 	*signed_value_len = out_value_len;
 
 	return 0;
@@ -370,7 +361,7 @@ static void hextobin(const char *str, uint8_t *bytes, size_t blen)
 	;
 }
 
-static int verify_data_hash_sha256(const char *data, int data_len, unsigned char *hash_b16, size_t hash_b16_len)
+static int verify_data_hash_sha256(const unsigned char *data, int data_len, unsigned char *hash_b16, size_t hash_b16_len)
 {
 	unsigned char hash_output[32]; /* SHA-256 outputs 32 bytes */
 	unsigned char decoded_hash_input[100];
@@ -383,7 +374,7 @@ static int verify_data_hash_sha256(const char *data, int data_len, unsigned char
 	/* 0 here means use the full SHA-256, not the SHA-224 variant */
 	mbedtls_sha256(data, data_len, hash_output, 0);
 
-	hextobin(hash_b16, decoded_hash_input, hash_b16_len);
+	hextobin((const char *)hash_b16, decoded_hash_input, hash_b16_len);
 	if (memcmp(decoded_hash_input, hash_output, sizeof(hash_output))) {
 		log_debug("Hash Verify Error\n");
 		print_hex("Expected", decoded_hash_input, 32);
@@ -394,25 +385,25 @@ static int verify_data_hash_sha256(const char *data, int data_len, unsigned char
 	return TUF_SUCCESS;
 }
 
-static int verify_signature(const char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
+static int verify_signature(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
 {
 	int ret;
 	int exit_code = -1;
 	mbedtls_pk_context pk;
 	unsigned char hash[32];
-	unsigned char *key_pem = key->keyval;
-	char decoded_bytes[TUF_BIG_CHUNK];
+	const char *key_pem = (const char *)key->keyval;
+	unsigned char decoded_bytes[TUF_BIG_CHUNK];
 	size_t decoded_len;
 	int ret64;
-	unsigned char cleaned_up_key_b64[TUF_BIG_CHUNK];
+	char cleaned_up_key_b64[TUF_BIG_CHUNK];
 
 	mbedtls_pk_init(&pk);
 
 	memset(cleaned_up_key_b64, 0, sizeof(cleaned_up_key_b64));
 	strcpy(cleaned_up_key_b64, key_pem);
-	replace_escape_chars_from_b64_string(cleaned_up_key_b64);
+	replace_escape_chars_from_b64_string((unsigned char *)cleaned_up_key_b64);
 
-	if ((ret = mbedtls_pk_parse_public_key(&pk, cleaned_up_key_b64, strlen(cleaned_up_key_b64) + 1)) != 0) {
+	if ((ret = mbedtls_pk_parse_public_key(&pk, (const unsigned char *)cleaned_up_key_b64, strlen(cleaned_up_key_b64) + 1)) != 0) {
 		log_error("verify_signature: failed. Could not read key. mbedtls_pk_parse_public_keyfile returned %d\n", ret);
 		log_error("key: %s\n", cleaned_up_key_b64);
 		goto exit;
@@ -442,6 +433,11 @@ static int verify_signature(const char *data, int data_len, unsigned char *signa
 	}
 
 	ret64 = mbedtls_base64_decode(decoded_bytes, TUF_BIG_CHUNK, &decoded_len, signature_bytes, signature_bytes_len);
+	if (ret64 != 0) {
+		log_error("verify_signature: error decoding base64 string\n");
+		goto exit;
+	}
+
 	if ((ret = mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, hash, 0,
 				     decoded_bytes, decoded_len)) != 0) {
 		log_error("verify_signature: failed  ! mbedtls_pk_verify returned %d\n", ret);
@@ -470,21 +466,6 @@ static int get_key_by_id(struct tuf_root *root, const char *key_id, struct tuf_k
 	return TUF_ERROR_KEY_ID_NOT_FOUND;
 }
 
-static int get_public_key_for_role(struct tuf_root *root, enum tuf_role role, int key_index, struct tuf_key **key)
-{
-	char *keyid;
-
-	if (role >= TUF_ROLES_COUNT)
-		return -EINVAL;
-
-	if (root == NULL)
-		return -EINVAL;
-
-	keyid = root->roles[role].keyids[key_index];
-
-	return get_key_by_id(root, keyid, key);
-}
-
 static int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, const char *key_id, struct tuf_key **key)
 {
 	int key_index;
@@ -505,7 +486,7 @@ static int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role ro
 	return TUF_ERROR_KEY_ID_FOR_ROLE_NOT_FOUND;
 }
 
-static int verify_data_signature_for_role(const char *signed_value, size_t signed_value_len, struct tuf_signature *signatures, enum tuf_role role, struct tuf_root *root)
+static int verify_data_signature_for_role(const unsigned char *signed_value, size_t signed_value_len, struct tuf_signature *signatures, enum tuf_role role, struct tuf_root *root)
 {
 	int ret;
 	int signature_index;
@@ -524,7 +505,7 @@ static int verify_data_signature_for_role(const char *signed_value, size_t signe
 		if (ret != 0)
 			// log_debug("get_public_key_by_id_and_role: not found. verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
 			continue;
-		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, strlen(signatures[signature_index].sig), key);
+		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, strlen((const char *)signatures[signature_index].sig), key);
 
 		if (!ret) {
 			/* Found valid signature */
@@ -557,7 +538,7 @@ static int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned 
 	return -EINVAL;
 }
 
-static int verify_length_and_hashes(const char *data, size_t len, enum tuf_role role)
+static int verify_length_and_hashes(const unsigned char *data, size_t len, enum tuf_role role)
 {
 	int ret;
 	unsigned char *expected_sha256;
@@ -572,14 +553,14 @@ static int verify_length_and_hashes(const char *data, size_t len, enum tuf_role 
 		return TUF_ERROR_LENGTH_VERIFY_ERROR;
 	}
 
-	ret = verify_data_hash_sha256(data, len, expected_sha256, strlen(expected_sha256));
+	ret = verify_data_hash_sha256(data, len, expected_sha256, strlen((char *)expected_sha256));
 	if (ret != TUF_SUCCESS)
 		return ret;
 
 	return TUF_SUCCESS;
 }
 
-static int split_metadata_and_check_signature(const char *data, size_t file_size, enum tuf_role role, struct tuf_signature *signatures, const char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
+static int split_metadata_and_check_signature(const unsigned char *data, size_t file_size, enum tuf_role role, struct tuf_signature *signatures, const unsigned char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
 {
 	int ret;
 
@@ -613,7 +594,7 @@ static int update_root(const unsigned char *data, size_t len, bool check_signatu
 {
 	// TODO: make sure check_signature is false only during unit testing
 	int ret;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_root new_root;
@@ -624,7 +605,7 @@ static int update_root(const unsigned char *data, size_t len, bool check_signatu
 		return ret;
 
 	// Parsing ROOT
-	ret = parse_root_signed_metadata(signed_value, signed_value_len, &new_root);
+	ret = parse_root_signed_metadata((const char *)signed_value, signed_value_len, &new_root);
 	if (ret < 0)
 		return ret;
 
@@ -703,7 +684,7 @@ static int parse_timestamp_signed_metadata(const char *data, int len, struct tuf
 static int update_timestamp(const unsigned char *data, size_t len, bool check_signature)
 {
 	int ret;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_timestamp new_timestamp;
@@ -715,7 +696,7 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 		return ret;
 
 	// Parsing Timestamp
-	ret = parse_timestamp_signed_metadata(signed_value, signed_value_len, &new_timestamp);
+	ret = parse_timestamp_signed_metadata((const char *)signed_value, signed_value_len, &new_timestamp);
 	if (ret < 0)
 		return ret;
 	/*
@@ -866,7 +847,7 @@ static int check_final_snapshot()
 static int update_snapshot(const unsigned char *data, size_t len, bool check_signature)
 {
 	int ret;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_snapshot new_snapshot;
@@ -894,7 +875,7 @@ static int update_snapshot(const unsigned char *data, size_t len, bool check_sig
 	if (ret != 0)
 		return ret;
 
-	ret = parse_snapshot_signed_metadata(signed_value, signed_value_len, &new_snapshot);
+	ret = parse_snapshot_signed_metadata((const char *)signed_value, signed_value_len, &new_snapshot);
 	if (ret < 0)
 		return ret;
 
@@ -945,7 +926,7 @@ static int update_snapshot(const unsigned char *data, size_t len, bool check_sig
 static int update_targets(const unsigned char *data, size_t len, bool check_signature)
 {
 	int ret;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_targets new_targets;
@@ -973,7 +954,7 @@ static int update_targets(const unsigned char *data, size_t len, bool check_sign
 	if (ret != 0)
 		return ret;
 
-	ret = parse_targets_metadata(signed_value, signed_value_len, &new_targets);
+	ret = parse_targets_metadata((const char *)signed_value, signed_value_len, &new_targets);
 	if (ret < 0)
 		return ret;
 
@@ -995,7 +976,7 @@ static int update_targets(const unsigned char *data, size_t len, bool check_sign
 
 
 /* TODO: Not sure if read_local_file should receive string or enum tuf_role */
-int load_local_metadata(enum tuf_role role, char *target_buffer, size_t limit, size_t *file_size)
+int load_local_metadata(enum tuf_role role, unsigned char *target_buffer, size_t limit, size_t *file_size)
 {
 	int ret;
 
@@ -1004,7 +985,7 @@ int load_local_metadata(enum tuf_role role, char *target_buffer, size_t limit, s
 }
 
 
-int persist_metadata(enum tuf_role role, char *data, size_t len)
+int persist_metadata(enum tuf_role role, const unsigned char *data, size_t len)
 {
 	int ret;
 
@@ -1012,7 +993,7 @@ int persist_metadata(enum tuf_role role, char *data, size_t len)
 	return ret;
 }
 
-int download_metadata(enum tuf_role role, char *target_buffer, size_t limit, int version, size_t *file_size)
+int download_metadata(enum tuf_role role, unsigned char *target_buffer, size_t limit, int version, size_t *file_size)
 {
 	const char *role_name = get_role_name(role);
 	char role_file_name[30];
@@ -1088,6 +1069,8 @@ static int load_timestamp()
 	ret = persist_metadata(ROLE_TIMESTAMP, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
+
+	return TUF_SUCCESS;
 }
 
 static int load_snapshot()
@@ -1126,6 +1109,8 @@ static int load_snapshot()
 	ret = persist_metadata(ROLE_SNAPSHOT, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
+
+	return TUF_SUCCESS;
 }
 
 static int load_targets()
@@ -1171,6 +1156,8 @@ static int load_targets()
 	ret = persist_metadata(ROLE_TARGETS, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
+
+	return TUF_SUCCESS;
 }
 
 int refresh()

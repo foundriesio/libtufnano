@@ -110,7 +110,7 @@ int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t tar
 	return TUF_SUCCESS;
 }
 
-int write_local_file(enum tuf_role role, const char *data, size_t len)
+int write_local_file(enum tuf_role role, const unsigned char *data, size_t len)
 {
 	const char *role_name = get_role_name(role);
 	char role_file_name[20];

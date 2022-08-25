@@ -22,7 +22,7 @@
 extern struct tuf_updater updater;
 
 /* tests only */
-int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, const char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
+int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, const unsigned char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
 {
 	int ret = -1;
 	size_t file_size;
@@ -43,7 +43,7 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
 	int signature_index;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_root new_root;
@@ -77,7 +77,7 @@ int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
 	int signature_index;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_timestamp new_timestamp;
@@ -102,7 +102,7 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
 	int signature_index;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_snapshot new_snapshot;
@@ -126,11 +126,11 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 
 
 /* for unit tests only */
-int verify_data_signature(const char *data, size_t data_len, const char *signing_public_key_b64, size_t signing_public_key_b64_len)
+int verify_data_signature(const unsigned char *data, size_t data_len, const char *signing_public_key_b64, size_t signing_public_key_b64_len)
 {
 	int ret = -1;
 	int signature_index;
-	const char *signed_value;
+	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 
@@ -267,6 +267,22 @@ TEST(Full_LibTufNAno, libTufNano_TestMixedSignatures){
 
 	ret = verify_file_signature("timestamp.json", "snapshot.json.sig_key");
 	TEST_ASSERT_EQUAL(MBEDTLS_ERR_RSA_INVALID_PADDING, ret);
+}
+
+/* tests only */
+static int get_public_key_for_role(struct tuf_root *root, enum tuf_role role, int key_index, struct tuf_key **key)
+{
+	char *keyid;
+
+	if (role >= TUF_ROLES_COUNT)
+		return -EINVAL;
+
+	if (root == NULL)
+		return -EINVAL;
+
+	keyid = root->roles[role].keyids[key_index];
+
+	return get_key_by_id(root, keyid, key);
 }
 
 TEST(Full_LibTufNAno, libTufNano_TestRoot1Load){
@@ -492,6 +508,18 @@ TEST(Full_LibTufNAno, libTufNano_TestFullLoadRootOperation){
 
 	ret = load_root();
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+}
+
+/* tests only */
+static int remove_all_local_role_files()
+{
+	// TODO: Restore original 1.root.json
+	// remove_local_role_file(ROLE_ROOT);
+	remove_local_role_file(ROLE_TIMESTAMP);
+	remove_local_role_file(ROLE_SNAPSHOT);
+	remove_local_role_file(ROLE_TARGETS);
+
+	return TUF_SUCCESS;
 }
 
 TEST(Full_LibTufNAno, libTufNano_TestRefresh){
