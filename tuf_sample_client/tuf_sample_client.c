@@ -182,7 +182,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	int ret;
 	struct aknano_context *context = (struct aknano_context *)application_context;
 
-	result = JSON_Search(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength);
+	result = JSON_SearchConst(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength);
 	if (result != JSONSuccess) {
 		log_error("tuf_parse_single_target: \"custom/version\" not found\n");
 		return 0;
@@ -196,7 +196,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	return 0;
 #endif
 	bool foundMatch = false;
-	char *outValue, *outSubValue;//, *uri;
+	const char *outValue, *outSubValue;//, *uri;
 	size_t outValueLength, outSubValueLength;
 	int i;
 	uint32_t version;
@@ -210,7 +210,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 
 
 	foundMatch = false;
-	result = JSON_Search(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength);
+	result = JSON_SearchConst(data, len, "custom/version", strlen("custom/version"), &outValue, &outValueLength, NULL);
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.version=%.*s", outValueLength, outValue));
 		sscanf(outValue, "%u", &version);
@@ -221,14 +221,14 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 		return -2;
 	}
 
-	result = JSON_Search(data, len, "custom/hardwareIds", strlen("custom/hardwareIds"), &outValue, &outValueLength);
+	result = JSON_SearchConst(data, len, "custom/hardwareIds", strlen("custom/hardwareIds"), &outValue, &outValueLength, NULL);
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.hardwareIds=%.*s", outValueLength, outValue));
 
 		for (i = 0; i < JSON_ARRAY_LIMIT_COUNT; i++) {
 			char s[10];
 			snprintf(s, sizeof(s), "[%d]", i);
-			if (JSON_Search(outValue, outValueLength, s, strlen(s), &outSubValue, &outSubValueLength) != JSONSuccess)
+			if (JSON_SearchConst(outValue, outValueLength, s, strlen(s), &outSubValue, &outSubValueLength, NULL) != JSONSuccess)
 				break;
 			if (strncmp(outSubValue, aknano_context->settings->hwid, outSubValueLength) == 0)
 				// LogInfo(("Found matching hardwareId" ));
@@ -243,14 +243,14 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 		return 0;
 
 	foundMatch = false;
-	result = JSON_Search((char *)data, len, "custom/tags", strlen("custom/tags"), &outValue, &outValueLength);
+	result = JSON_SearchConst((char *)data, len, "custom/tags", strlen("custom/tags"), &outValue, &outValueLength, NULL);
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.tags=%.*s", outValueLength, outValue));
 
 		for (i = 0; i < JSON_ARRAY_LIMIT_COUNT; i++) {
 			char s[10];
 			snprintf(s, sizeof(s), "[%d]", i);
-			if (JSON_Search(outValue, outValueLength, s, strlen(s), &outSubValue, &outSubValueLength) != JSONSuccess)
+			if (JSON_SearchConst(outValue, outValueLength, s, strlen(s), &outSubValue, &outSubValueLength, NULL) != JSONSuccess)
 				break;
 			if (strncmp(outSubValue, aknano_context->settings->tag, outSubValueLength) == 0)
 				// LogInfo(("Found matching tag" ));
@@ -264,7 +264,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 		// LogInfo(("Matching tag not found (%s)", aknano_context->settings->tag));
 		return 0;
 
-	// result = JSON_Search(data, len, "custom.updatedAt", strlen("custom.updatedAt"), &outValue, &outValueLength);
+	// result = JSON_SearchConst(data, len, "custom.updatedAt", strlen("custom.updatedAt"), &outValue, &outValueLength);
 	// if (result == JSONSuccess) {
 	//		 LogInfo(("handle_json_data: custom.updatedAt=%.*s", outValueLength, outValue));
 	// } else {
@@ -272,7 +272,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	//		 return -2;
 	// }
 
-	result = JSON_Search(data, len, "custom/uri", strlen("custom/uri"), &outValue, &outValueLength);
+	result = JSON_SearchConst(data, len, "custom/uri", strlen("custom/uri"), &outValue, &outValueLength, NULL);
 	if (result == JSONSuccess) {
 		// LogInfo(("handle_json_data: custom.uri=%.*s", outValueLength, outValue));
 	} else {

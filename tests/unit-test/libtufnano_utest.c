@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#include <time.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,7 +22,7 @@
 extern struct tuf_updater updater;
 
 /* tests only */
-int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
+int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, const char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
 {
 	int ret = -1;
 	size_t file_size;
@@ -40,7 +43,7 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
 	int signature_index;
-	char *signed_value;
+	const char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_root new_root;
@@ -74,7 +77,7 @@ int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
 	int signature_index;
-	char *signed_value;
+	const char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_timestamp new_timestamp;
@@ -99,7 +102,7 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 {
 	int ret = -1;
 	int signature_index;
-	char *signed_value;
+	const char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 	struct tuf_snapshot new_snapshot;
@@ -127,7 +130,7 @@ int verify_data_signature(const char *data, size_t data_len, const char *signing
 {
 	int ret = -1;
 	int signature_index;
-	char *signed_value;
+	const char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
 
