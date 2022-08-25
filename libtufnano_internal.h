@@ -56,6 +56,7 @@ struct tuf_signature {
 	char		keyid[TUF_KEY_ID_MAX_LEN];
 	char		method[TUF_SIGNATURE_METHOD_NAME_MAX_LEN];
 	unsigned char	sig[TUF_SIGNATURE_MAX_LEN];
+	size_t		sig_len;
 	bool		set;
 };
 

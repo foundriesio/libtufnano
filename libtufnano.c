@@ -264,6 +264,7 @@ static int split_metadata(const unsigned char *data, int len, struct tuf_signatu
 	int signature_index = 0;
 	const char *out_value_internal;
 	struct tuf_signature *current_signature;
+	int ret;
 
 	result = JSON_Validate((const char *)data, len);
 	if (len <= 0)
@@ -315,7 +316,13 @@ static int split_metadata(const unsigned char *data, int len, struct tuf_signatu
 			log_error("'sig' field not found\n");
 			return TUF_ERROR_FIELD_MISSING;
 		}
-		strncpy((char *)current_signature->sig, out_value_internal, value_length_internal);
+
+		ret = mbedtls_base64_decode(current_signature->sig, sizeof(current_signature->sig), &current_signature->sig_len, (const unsigned char *)out_value_internal, value_length_internal);
+		if (ret != 0) {
+			log_error("error decoding base64 string\n");
+			return TUF_ERROR_INVALID_FIELD_VALUE;
+		}
+
 		current_signature->set = true;
 		signature_index++;
 	}
@@ -394,9 +401,6 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 	mbedtls_pk_context pk;
 	unsigned char hash[TUF_HASH256_LEN];
 	const char *key_pem = (const char *)key->keyval;
-	unsigned char decoded_bytes[TUF_BIG_CHUNK];
-	size_t decoded_len;
-	int ret64;
 	char cleaned_up_key_b64[TUF_BIG_CHUNK];
 
 	mbedtls_pk_init(&pk);
@@ -434,14 +438,8 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 		goto exit;
 	}
 
-	ret64 = mbedtls_base64_decode(decoded_bytes, TUF_BIG_CHUNK, &decoded_len, signature_bytes, signature_bytes_len);
-	if (ret64 != 0) {
-		log_error("verify_signature: Error decoding base64 string\n");
-		goto exit;
-	}
-
 	if ((ret = mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, hash, 0,
-				     decoded_bytes, decoded_len)) != 0) {
+				     signature_bytes, signature_bytes_len)) != 0) {
 		log_error("verify_signature: failed  ! mbedtls_pk_verify returned %d\n", ret);
 		exit_code = ret;
 		goto exit;
@@ -507,7 +505,7 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 		if (ret != 0)
 			// log_debug("get_public_key_by_id_and_role: not found. verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index);
 			continue;
-		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, strlen((const char *)signatures[signature_index].sig), key);
+		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, signatures[signature_index].sig_len, key);
 
 		if (!ret) {
 			/* Found valid signature */

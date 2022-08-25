@@ -145,7 +145,7 @@ int verify_data_signature(const unsigned char *data, size_t data_len, const char
 		struct tuf_key key;
 		memset(&key, 0, sizeof(key));
 		memcpy(key.keyval, signing_public_key_b64, signing_public_key_b64_len);
-		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, strlen(signatures[signature_index].sig), &key);
+		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, signatures[signature_index].sig_len, &key);
 		if (!ret)
 			/* Found valid signature */
 			return ret;
