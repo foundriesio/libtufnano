@@ -43,10 +43,11 @@
 #define TUF_KEY_ID_MAX_LEN 65
 #define TUF_MAX_KEY_COUNT 10
 #define TUF_KEYIDS_PER_ROLE_MAX_COUNT 5
+#define TUF_KEY_TYPE_MAX_LEN 10
 
-/* TODO: adjust proper size limits on fields */
-/* TODO: save space in memory by keeping decoded bytes instead of base64 string */
-#define TUF_BIG_CHUNK 1024
+/* TODO: save space in memory by keeping decoded key instead of base64 string */
+#define TUF_KEY_VAL_MAX_LEN 500
+#define TUF_DATETIME_MAX_LEN 22
 
 #define TUF_HASH256_LEN 32
 
@@ -61,14 +62,14 @@ struct tuf_signature {
 };
 
 struct tuf_key {
-	char	id[TUF_BIG_CHUNK];
-	char	keyval[TUF_BIG_CHUNK];
-	char	keytype[TUF_BIG_CHUNK];
+	char	id[TUF_KEY_ID_MAX_LEN];
+	char	keyval[TUF_KEY_VAL_MAX_LEN];
+	char	keytype[TUF_KEY_TYPE_MAX_LEN];
 };
 
 struct tuf_metadata {
 	int	version;
-	char	expires[21];
+	char	expires[TUF_DATETIME_MAX_LEN];
 	time_t	expires_epoch;
 };
 

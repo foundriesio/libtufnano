@@ -157,7 +157,7 @@ int verify_data_signature(const unsigned char *data, size_t data_len, const char
 /* for unit tests only */
 int verify_file_signature(const char *file_base_name, const char *signing_key_file)
 {
-	unsigned char signing_public_key_b64[TUF_BIG_CHUNK];
+	unsigned char signing_public_key_b64[TUF_KEY_VAL_MAX_LEN];
 	size_t file_size, key_file_size;
 	int ret;
 

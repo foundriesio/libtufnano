@@ -401,7 +401,7 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 	mbedtls_pk_context pk;
 	unsigned char hash[TUF_HASH256_LEN];
 	const char *key_pem = (const char *)key->keyval;
-	char cleaned_up_key_b64[TUF_BIG_CHUNK];
+	char cleaned_up_key_b64[TUF_KEY_VAL_MAX_LEN];
 
 	mbedtls_pk_init(&pk);
 
