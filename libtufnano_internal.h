@@ -21,18 +21,6 @@
 #define _SNAPSHOT "snapshot"
 #define _TARGETS "targets"
 #define _TIMESTAMP "timestamp"
-// const char *_ROOT = "root";
-// const char *_SNAPSHOT = "snapshot";
-// const char *_TARGETS = "targets";
-// const char *_TIMESTAMP = "timestamp";
-
-
-#define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa"
-
-
-#define log_debug printf
-#define log_info printf
-#define log_error printf
 
 /* Fields size limits */
 #define TUF_SIGNATURES_MAX_COUNT 10

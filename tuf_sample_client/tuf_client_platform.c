@@ -37,20 +37,20 @@ size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit,
 	FILE *f;
 
 	if (limit <= 0) {
-		log_error("read_file_posix: Invalid limit %ld\n", limit);
+		log_error(("read_file_posix: Invalid limit %ld\n", limit));
 		return -EINVAL;
 	}
 
 	snprintf(file_path, MAX_FILE_PATH_LEN, "%s/%s", base_path, base_name);
 	f = fopen(file_path, "rb");
 	if (f == NULL) {
-		log_error("Unable to read open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
+		log_error(("Unable to read open file %s: %s - (%d)\n", file_path, strerror(errno), errno));
 		return -errno;
 	}
 	*file_size = fread(output_buffer, 1, limit, f);
 	fclose(f);
 	if (*file_size == 0) {
-		log_error("Unable to read from file %s: %s - (%d)\n", file_path, strerror(errno), errno);
+		log_error(("Unable to read from file %s: %s - (%d)\n", file_path, strerror(errno), errno));
 		return -errno;
 	}
 	return TUF_SUCCESS;
@@ -66,7 +66,7 @@ size_t write_file_posix(const char *base_name, const char *data, size_t len, con
 	f = fopen(file_path, "wb");
 
 	if (f == NULL) {
-		log_error("Unable to write open file %s: %s - (%d)\n", file_path, strerror(errno), errno);
+		log_error(("Unable to write open file %s: %s - (%d)\n", file_path, strerror(errno), errno));
 		return -errno;
 	}
 	ret = fwrite(data, 1, len, f);

@@ -19,6 +19,8 @@
 #include "libtufnano.c"
 #include "libtufnano_internal.h"
 
+#define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa"
+
 extern struct tuf_updater updater;
 
 /* tests only */
@@ -190,7 +192,7 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 		return -30;
 
 	hextobin(hash256_b16, hash256, TUF_HASH256_LEN);
-	log_debug("Verifying hash for %s\n", file_base_name);
+	log_debug(("Verifying hash for %s\n", file_base_name));
 	return verify_data_hash_sha256(updater.data_buffer, file_size, hash256, TUF_HASH256_LEN);
 }
 
@@ -544,6 +546,6 @@ int run_full_test(void)
 
 int main()
 {
-	log_debug("get_current_gmt_time=%ld\n", get_current_gmt_time());
+	log_debug(("get_current_gmt_time=%ld\n", get_current_gmt_time()));
 	run_full_test();
 }
