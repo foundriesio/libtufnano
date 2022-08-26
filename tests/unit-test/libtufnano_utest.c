@@ -254,7 +254,7 @@ TEST(Full_LibTufNAno, libTufNano_TestTargetSignature){
 TEST(Full_LibTufNAno, libTufNano_TestRootSignature){
 	int ret;
 
-	ret = verify_file_signature("1.root_canonical.json", "1.root_canonical.json.sig_key");
+	ret = verify_file_signature("1.root.json", "1.root.json.sig_key");
 	TEST_ASSERT_EQUAL(0, ret);
 }
 
@@ -284,7 +284,7 @@ static int get_public_key_for_role(struct tuf_root *root, enum tuf_role role, in
 TEST(Full_LibTufNAno, libTufNano_TestRoot1Load){
 	int ret;
 
-	ret = parse_root("1.root_canonical.json", true);
+	ret = parse_root("1.root.json", true);
 
 	TEST_ASSERT_EQUAL(0, ret);
 
@@ -353,7 +353,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRoot1Load){
 TEST(Full_LibTufNAno, libTufNano_TestRoot2Load){
 	int ret;
 
-	ret = parse_root("2.root_canonical.json", false);
+	ret = parse_root("2.root.json", false);
 
 	TEST_ASSERT_EQUAL(0, ret);
 
@@ -420,11 +420,11 @@ TEST(Full_LibTufNAno, libTufNano_TestRoot2Load){
 TEST(Full_LibTufNAno, libTufNano_TestRootUpdateCheck){
 	int ret;
 
-	ret = parse_root("1.root_canonical.json", true);
+	ret = parse_root("1.root.json", true);
 
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
-	ret = parse_root("2.root_canonical.json", true);
+	ret = parse_root("2.root.json", true);
 
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 }
@@ -439,10 +439,10 @@ TEST(Full_LibTufNAno, libTufNano_TestTimestampLoadWithoutRoot){
 TEST(Full_LibTufNAno, libTufNano_TestTimestampLoad){
 	int ret;
 
-	ret = parse_root("1.root_canonical.json", true);
+	ret = parse_root("1.root.json", true);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
-	ret = parse_root("2.root_canonical.json", true);
+	ret = parse_root("2.root.json", true);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
 	ret = parse_timestamp("timestamp.json", true);
@@ -463,10 +463,10 @@ TEST(Full_LibTufNAno, libTufNano_TestTimestampLoad){
 TEST(Full_LibTufNAno, libTufNano_TestSnapshotLoadWithoutTimestamp){
 	int ret;
 
-	ret = parse_root("1.root_canonical.json", true);
+	ret = parse_root("1.root.json", true);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
-	ret = parse_root("2.root_canonical.json", true);
+	ret = parse_root("2.root.json", true);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
 	ret = parse_snapshot("snapshot.json", true);
@@ -476,10 +476,10 @@ TEST(Full_LibTufNAno, libTufNano_TestSnapshotLoadWithoutTimestamp){
 TEST(Full_LibTufNAno, libTufNano_TestSnapshotLoad){
 	int ret;
 
-	ret = parse_root("1.root_canonical.json", true);
+	ret = parse_root("1.root.json", true);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
-	ret = parse_root("2.root_canonical.json", true);
+	ret = parse_root("2.root.json", true);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
 	ret = parse_timestamp("timestamp.json", true);
