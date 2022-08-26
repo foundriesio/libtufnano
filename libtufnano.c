@@ -914,15 +914,15 @@ static int update_snapshot(const unsigned char *data, size_t len, bool check_sig
 
 	memset(&new_snapshot, 0, sizeof(new_snapshot));
 
-	log_debug("Updating snapshot");
+	log_debug("Updating snapshot\n");
 
 	if (!updater.timestamp.loaded) {
-		log_error("Cannot update snapshot before timestamp");
+		log_error("Cannot update snapshot before timestamp\n");
 		return TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED;
 	}
 
 	if (updater.targets.loaded) {
-		log_error("Cannot update snapshot after targets");
+		log_error("Cannot update snapshot after targets\n");
 		return TUF_ERROR_TARGETS_ROLE_LOADED;
 	}
 
@@ -1184,7 +1184,7 @@ static int load_targets()
 	if (updater.targets.loaded)
 		return TUF_SUCCESS;
 
-	ret = load_local_metadata(ROLE_SNAPSHOT, updater.data_buffer, updater.data_buffer_len, &file_size);
+	ret = load_local_metadata(ROLE_TARGETS, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
 		log_debug("local targets not found. Proceeding\n");
 	} else {
