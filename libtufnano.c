@@ -20,14 +20,6 @@
 #include "libtufnano.h"
 #include "libtufnano_internal.h"
 
-
-/*
- * TUF metadata has '.' in field names.
- * We change the key separator for coreJSON to '/' to avoid ambiguity
- * This is currently being done in the Makefile
- *  #define JSON_QUERY_KEY_SEPARATOR '/'
- */
-
 struct tuf_updater updater;
 static struct tuf_config config;
 
@@ -628,14 +620,14 @@ static int parse_tuf_file_info(const char *data, size_t len, struct tuf_role_fil
 	const char *out_value;
 	size_t out_value_len;
 
-	result = JSON_SearchConst(data, len, "hashes/sha256", strlen("hashes/sha256"), &out_value, &out_value_len, NULL);
+	result = JSON_SearchConst(data, len, "hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256", strlen("hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
-		log_error("parse_timestamp_signed_metadata: \"hashes/sha256\" not found\n");
+		log_error("parse_timestamp_signed_metadata: \"hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256\" not found\n");
 		return TUF_ERROR_FIELD_MISSING;
 	}
 
 	if (out_value_len != TUF_HASH256_LEN * 2) {
-		log_error("parse_timestamp_signed_metadata: invalid \"hashes/sha256\" length: %ld\n", out_value_len);
+		log_error("parse_timestamp_signed_metadata: invalid \"hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256\" length: %ld\n", out_value_len);
 		return TUF_ERROR_INVALID_FIELD_VALUE;
 	}
 	hextobin(out_value, target->hash_sha256, TUF_HASH256_LEN);
@@ -671,9 +663,9 @@ static int parse_timestamp_signed_metadata(const char *data, int len, struct tuf
 		return TUF_ERROR_INVALID_METADATA;
 	}
 
-	result = JSON_SearchConst(data, len, "meta/snapshot.json", strlen("meta/snapshot.json"), &out_value, &out_value_len, NULL);
+	result = JSON_SearchConst(data, len, "meta" TUF_JSON_QUERY_KEY_SEPARATOR "snapshot.json", strlen("meta" TUF_JSON_QUERY_KEY_SEPARATOR "snapshot.json"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
-		log_error("parse_timestamp_signed_metadata: \"meta/snapshot.json\" not found\n");
+		log_error("parse_timestamp_signed_metadata: \"meta" TUF_JSON_QUERY_KEY_SEPARATOR "snapshot.json\" not found\n");
 		return TUF_ERROR_FIELD_MISSING;
 	}
 
@@ -749,17 +741,17 @@ static int parse_snapshot_signed_metadata(const char *data, int len, struct tuf_
 	}
 
 	/* Get root.json file info */
-	result = JSON_SearchConst(data, len, "meta/root.json", strlen("meta/root.json"), &out_value, &out_value_len, NULL);
+	result = JSON_SearchConst(data, len, "meta" TUF_JSON_QUERY_KEY_SEPARATOR "root.json", strlen("meta" TUF_JSON_QUERY_KEY_SEPARATOR "root.json"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
-		log_error("parse_timestamp_signed_metadata: \"meta/root.json\" not found\n");
+		log_error("parse_timestamp_signed_metadata: \"meta" TUF_JSON_QUERY_KEY_SEPARATOR "root.json\" not found\n");
 		return TUF_ERROR_FIELD_MISSING;
 	}
 	parse_tuf_file_info(out_value, out_value_len, &target->root_file);
 
 	/* Get targets.json file info */
-	result = JSON_SearchConst(data, len, "meta/targets.json", strlen("meta/targets.json"), &out_value, &out_value_len, NULL);
+	result = JSON_SearchConst(data, len, "meta" TUF_JSON_QUERY_KEY_SEPARATOR "targets.json", strlen("meta" TUF_JSON_QUERY_KEY_SEPARATOR "targets.json"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
-		log_error("parse_timestamp_signed_metadata: \"meta/targets.json\" not found\n");
+		log_error("parse_timestamp_signed_metadata: \"meta" TUF_JSON_QUERY_KEY_SEPARATOR "targets.json\" not found\n");
 		return TUF_ERROR_FIELD_MISSING;
 	}
 	parse_tuf_file_info(out_value, out_value_len, &target->targets_file);

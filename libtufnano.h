@@ -4,6 +4,16 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+/*
+ * TUF metadata has '.' in field names.
+ * We change the key separator for coreJSON to '/' to avoid ambiguity
+ * This is currently being done in the Makefile
+ *  #define JSON_QUERY_KEY_SEPARATOR '/'
+ * The following define needs to be consistent with the character used
+ * when compiling coreJSON
+ */
+#define TUF_JSON_QUERY_KEY_SEPARATOR "/"
+
 /* Error codes */
 #define TUF_SUCCESS 0
 
