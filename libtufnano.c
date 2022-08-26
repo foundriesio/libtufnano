@@ -66,6 +66,10 @@ static bool is_expired(time_t expires, time_t reference_time)
 	return expires < reference_time;
 }
 
+/*
+ * Replace ['\', 'n'] occurences with ['\n', '\n'] to avoid key parsing errors
+ * in mbedtls.
+ */
 static void replace_escape_chars_from_b64_string(unsigned char *s)
 {
 	unsigned char *p = s;
@@ -96,6 +100,10 @@ static enum tuf_role role_string_to_enum(const char *role_name, size_t role_name
 	return TUF_ROLES_COUNT;
 }
 
+/*
+ * Load common metadata fields from JSON "signed" section string into
+ * tuf_metadata struct.
+ */
 static int parse_base_metadata(const char *data, int len, enum tuf_role role, struct tuf_metadata *base)
 {
 	const char *out_value;
@@ -138,6 +146,10 @@ static int parse_base_metadata(const char *data, int len, enum tuf_role role, st
 	return TUF_SUCCESS;
 }
 
+/*
+ * Load Root metadata fields from JSON "signed" section string into tuf_root
+ * struct.
+ */
 static int parse_root_signed_metadata(const char *data, int len, struct tuf_root *target)
 {
 	JSONStatus_t result;
@@ -244,6 +256,12 @@ static int parse_root_signed_metadata(const char *data, int len, struct tuf_root
 	return parse_base_metadata(data, len, ROLE_ROOT, &target->base);
 }
 
+/*
+ * Initial parsing of metadata JSON, loading signatures into signatures array
+ * and returning the "signed" section of the metadata as a separate string.
+ *
+ * The input data is not changed.
+ */
 static int split_metadata(const unsigned char *data, int len, struct tuf_signature *signatures, int signatures_max_count, const unsigned char **signed_value, int *signed_value_len)
 {
 	JSONStatus_t result;
@@ -330,6 +348,9 @@ static int split_metadata(const unsigned char *data, int len, struct tuf_signatu
 	return 0;
 }
 
+/*
+ * Outputs binary data as hex string.
+ */
 static void print_hex(const char *title, const unsigned char buf[], size_t len)
 {
 	log_debug("%s: ", title);
@@ -340,6 +361,9 @@ static void print_hex(const char *title, const unsigned char buf[], size_t len)
 	log_debug("\r\n");
 }
 
+/*
+ * Convert a hex string in a bytes array.
+ */
 /* TODO: Verify safety of this function */
 static void hextobin(const char *str, uint8_t *bytes, size_t blen)
 {
@@ -358,9 +382,12 @@ static void hextobin(const char *str, uint8_t *bytes, size_t blen)
 		idx1 = ((uint8_t)str[pos + 1] & 0x1F) ^ 0x10;
 		bytes[pos / 2] = (uint8_t)(hashmap[idx0] << 4) | hashmap[idx1];
 	}
-	;
 }
 
+/*
+ * Calculate the SHA-256 hash of teh input data, comparing it to the expected
+ * value.
+ */
 static int verify_data_hash_sha256(const unsigned char *data, int data_len, unsigned char *expected_hash256, size_t hash_len)
 {
 	unsigned char hash_output[TUF_HASH256_LEN]; /* SHA-256 outputs 32 bytes */
@@ -384,7 +411,10 @@ static int verify_data_hash_sha256(const unsigned char *data, int data_len, unsi
 }
 
 /*
- * verify_signature: rsassa-pss-sha256 mode only
+ * Calculates the signature of the input data, using the public key passed as
+ * parameter, and compares it to the expected signature.
+ *
+ * rsassa-pss-sha256 mode only.
  */
 static int verify_signature(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
 {
@@ -398,7 +428,7 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 	mbedtls_pk_init(&pk);
 
 	memset(cleaned_up_key_b64, 0, sizeof(cleaned_up_key_b64));
-	strcpy(cleaned_up_key_b64, key_pem);
+	strncpy(cleaned_up_key_b64, key_pem, TUF_KEY_VAL_MAX_LEN);
 	replace_escape_chars_from_b64_string((unsigned char *)cleaned_up_key_b64);
 
 	if ((ret = mbedtls_pk_parse_public_key(&pk, (const unsigned char *)cleaned_up_key_b64, strlen(cleaned_up_key_b64) + 1)) != 0) {
@@ -445,6 +475,9 @@ exit:
 	return exit_code;
 }
 
+/*
+ * Get the public key from Root based on its keyid.
+ */
 static int get_key_by_id(struct tuf_root *root, const char *key_id, struct tuf_key **key)
 {
 	int i;
@@ -458,6 +491,10 @@ static int get_key_by_id(struct tuf_root *root, const char *key_id, struct tuf_k
 	return TUF_ERROR_KEY_ID_NOT_FOUND;
 }
 
+/*
+ * Get the public key from Root based on its keyid, but only if the key matches
+ * the requested role.
+ */
 static int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role role, const char *key_id, struct tuf_key **key)
 {
 	int key_index;
@@ -478,6 +515,12 @@ static int get_public_key_by_id_and_role(struct tuf_root *root, enum tuf_role ro
 	return TUF_ERROR_KEY_ID_FOR_ROLE_NOT_FOUND;
 }
 
+/*
+ * Verify the metadata signature for the given role.
+ *
+ * Only return TUF_SUCCESS if the number of valid signatures is >= the role
+ * threshold.
+ */
 static int verify_data_signature_for_role(const unsigned char *signed_value, size_t signed_value_len, struct tuf_signature *signatures, enum tuf_role role, struct tuf_root *root)
 {
 	int ret;
@@ -512,6 +555,12 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 		return TUF_SUCCESS;
 }
 
+/*
+ * Get the expected SHA 256 hash value and length for the given role, based on
+ * information available in previously loaded roles.
+ *
+ * Only valid for Snapshot and Targets role.
+ */
 static int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned char **sha256, size_t *length)
 {
 	if (role == ROLE_SNAPSHOT) {
@@ -530,6 +579,9 @@ static int get_expected_sha256_and_length_for_role(enum tuf_role role, unsigned 
 	return -EINVAL;
 }
 
+/*
+ * Verify role metadata comparing input data with expected length and hashes.
+ */
 static int verify_length_and_hashes(const unsigned char *data, size_t len, enum tuf_role role)
 {
 	int ret;
@@ -552,6 +604,13 @@ static int verify_length_and_hashes(const unsigned char *data, size_t len, enum 
 	return TUF_SUCCESS;
 }
 
+/*
+ * Separate metadata signatures from "signed" section, checking if signature is
+ * valid.
+ *
+ * Asssumes "signed" section is a canonical JSON, avoiding the need to parse and
+ * re-generate a JSON string before validation.
+ */
 static int split_metadata_and_check_signature(const unsigned char *data, size_t file_size, enum tuf_role role, struct tuf_signature *signatures, const unsigned char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
 {
 	int ret;
@@ -582,6 +641,10 @@ static int split_metadata_and_check_signature(const unsigned char *data, size_t 
 	return TUF_SUCCESS;
 }
 
+/*
+ * Load the Root role metadata, validating it, and loading the resulting
+ * information into updater struct.
+ */
 static int update_root(const unsigned char *data, size_t len, bool check_signature)
 {
 	// TODO: make sure check_signature is false only during unit testing
