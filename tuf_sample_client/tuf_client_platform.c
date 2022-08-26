@@ -13,7 +13,12 @@
  * fetch_file, read_local_file and save_local_file will be provided by external application
  */
 
+/* Where to store non volatile data for TUF metadata */
 #define TUF_LOCAL_FILES_PATH "nvs"
+
+/* Emulate files download */
+#define TUF_REMOTE_FILES_PATH "tests/sample_jsons/rsa"
+
 #define MAX_FILE_PATH_LEN 150
 
 /* Platform specific code */
@@ -88,7 +93,7 @@ int remove_local_file_posix(const char *base_name, char *base_path)
 int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
 {
 	/* For now, simulating files download using local copies */
-	int ret = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_TEST_FILES_PATH, file_size);
+	int ret = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_REMOTE_FILES_PATH, file_size);
 
 	// log_debug("fetch_file ret=%d\n", ret);
 	if (ret < 0)

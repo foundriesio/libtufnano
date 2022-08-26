@@ -47,7 +47,7 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 	int signature_index;
 	const unsigned char *signed_value;
 	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
 	struct tuf_root new_root;
 
 	memset(&new_root, 0, sizeof(new_root));
@@ -81,7 +81,7 @@ int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 	int signature_index;
 	const unsigned char *signed_value;
 	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
 	struct tuf_timestamp new_timestamp;
 
 	memset(&new_timestamp, 0, sizeof(new_timestamp));
@@ -106,7 +106,7 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 	int signature_index;
 	const unsigned char *signed_value;
 	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
 	struct tuf_snapshot new_snapshot;
 
 	memset(&new_snapshot, 0, sizeof(new_snapshot));
@@ -134,13 +134,13 @@ int verify_data_signature(const unsigned char *data, size_t data_len, const char
 	int signature_index;
 	const unsigned char *signed_value;
 	int signed_value_len;
-	struct tuf_signature signatures[TUF_SIGNATURES_MAX_COUNT];
+	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
 
-	ret = split_metadata(data, data_len, signatures, TUF_SIGNATURES_MAX_COUNT, &signed_value, &signed_value_len);
+	ret = split_metadata(data, data_len, signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
 	if (ret < 0)
 		return ret;
 
-	for (signature_index = 0; signature_index < TUF_SIGNATURES_MAX_COUNT; signature_index++) {
+	for (signature_index = 0; signature_index < TUF_SIGNATURES_PER_ROLE_MAX_COUNT; signature_index++) {
 		if (!signatures[signature_index].set)
 			break;
 

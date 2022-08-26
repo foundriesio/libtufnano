@@ -16,25 +16,38 @@
 #define ANSI_COLOR_CYAN    "\x1b[36m"
 #define ANSI_COLOR_RESET   "\x1b[0m"
 
-
 #define _ROOT "root"
 #define _SNAPSHOT "snapshot"
 #define _TARGETS "targets"
 #define _TIMESTAMP "timestamp"
 
 /* Fields size limits */
-#define TUF_SIGNATURES_MAX_COUNT 10
-#define TUF_SIGNATURE_MAX_LEN 512
-#define TUF_SIGNATURE_METHOD_NAME_MAX_LEN 20
-#define TUF_KEY_ID_MAX_LEN 65
-#define TUF_MAX_KEY_COUNT 10
-#define TUF_KEYIDS_PER_ROLE_MAX_COUNT 5
-#define TUF_KEY_TYPE_MAX_LEN 10
+#ifndef TUF_SIGNATURES_PER_ROLE_MAX_COUNT
+#define TUF_SIGNATURES_PER_ROLE_MAX_COUNT 10
+#endif
 
+#ifndef TUF_SIGNATURE_MAX_LEN
+#define TUF_SIGNATURE_MAX_LEN 512
+#endif
+
+#ifndef TUF_MAX_KEY_COUNT
+#define TUF_MAX_KEY_COUNT 10
+#endif
+
+#ifndef TUF_KEYIDS_PER_ROLE_MAX_COUNT
+#define TUF_KEYIDS_PER_ROLE_MAX_COUNT 5
+#endif
+
+#ifndef TUF_KEY_VAL_MAX_LEN
 /* TODO: save space in memory by keeping decoded key instead of base64 string */
 #define TUF_KEY_VAL_MAX_LEN 500
-#define TUF_DATETIME_MAX_LEN 22
+#endif
 
+
+#define TUF_SIGNATURE_METHOD_NAME_MAX_LEN 20
+#define TUF_KEY_ID_MAX_LEN 65
+#define TUF_KEY_TYPE_MAX_LEN 10
+#define TUF_DATETIME_MAX_LEN 22
 #define TUF_HASH256_LEN 32
 
 /* Data types */
