@@ -206,7 +206,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 		for (i = 0; i < JSON_ARRAY_LIMIT_COUNT; i++) {
 			char s[10];
 			snprintf(s, sizeof(s), "[%d]", i);
-			if (JSON_SearchConst(out_value, out_value_len, s, strlen(s), &out_sub_value, &out_sub_value_len, NULL) != JSONSuccess)
+			if (JSON_SearchConst(out_value, out_value_len, s, strnlen(s, sizeof(s)), &out_sub_value, &out_sub_value_len, NULL) != JSONSuccess)
 				break;
 			if (strncmp(out_sub_value, aknano_context->settings->hwid, out_sub_value_len) == 0)
 				// LogInfo(("Found matching hardwareId" ));
