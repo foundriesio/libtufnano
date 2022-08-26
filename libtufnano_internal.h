@@ -35,8 +35,6 @@
 #define log_error printf
 
 /* Fields size limits */
-#define MAX_FILE_PATH_LEN 150
-#define DATA_BUFFER_LEN 10 * 1024
 #define TUF_SIGNATURES_MAX_COUNT 10
 #define TUF_SIGNATURE_MAX_LEN 512
 #define TUF_SIGNATURE_METHOD_NAME_MAX_LEN 20

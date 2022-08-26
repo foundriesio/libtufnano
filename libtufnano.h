@@ -51,6 +51,7 @@ int tuf_targets_processing_done(void *application_context);
 int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size);
 int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size);
 int write_local_file(enum tuf_role role, const unsigned char *data, size_t len);
+int tuf_get_application_buffer(unsigned char **buffer, size_t *buffer_size);
 
 int refresh();
 

@@ -14,6 +14,7 @@
  */
 
 #define TUF_LOCAL_FILES_PATH "nvs"
+#define MAX_FILE_PATH_LEN 150
 
 /* Platform specific code */
 time_t get_current_gmt_time()

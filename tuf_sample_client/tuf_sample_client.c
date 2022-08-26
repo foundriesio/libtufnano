@@ -264,3 +264,12 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 	strncpy(aknano_context->selected_target.uri, out_value, out_value_len);
 	return 0;
 }
+
+#define DATA_BUFFER_LEN 10 * 1024
+unsigned char data_buffer[DATA_BUFFER_LEN];
+int tuf_get_application_buffer(unsigned char **buffer, size_t *buffer_size)
+{
+	*buffer = data_buffer;
+	*buffer_size = DATA_BUFFER_LEN;
+	return 0;
+}

@@ -176,7 +176,7 @@ int verify_file_signature(const char *file_base_name, const char *signing_key_fi
 /* for unit tests only */
 int verify_file_hash(const char *file_base_name, const char *sha256_file)
 {
-	unsigned char hash256_b16[(TUF_HASH256_LEN * 2) + 2];
+	unsigned char hash256_b16[TUF_HASH256_LEN * 2];
 	unsigned char hash256[TUF_HASH256_LEN];
 	size_t file_size, hash_file_size;
 	int ret;
@@ -202,15 +202,9 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 
 TEST_GROUP(Full_LibTufNAno);
 
-TEST_SETUP(Full_LibTufNAno){
-	static unsigned char data_buffer[DATA_BUFFER_LEN];
-
-	memset(&updater, 0, sizeof(updater));
-	updater.reference_time = get_current_gmt_time();
-	updater.application_context = tuf_get_application_context();
-	updater.data_buffer = data_buffer;
-	updater.data_buffer_len = sizeof(data_buffer);
-
+TEST_SETUP(Full_LibTufNAno)
+{
+	tuf_updater_init();
 	load_config();
 }
 

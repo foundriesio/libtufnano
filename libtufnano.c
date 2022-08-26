@@ -34,8 +34,8 @@ static struct tuf_config config;
 void load_config()
 {
 	config.max_root_rotations = 10000;
-	config.snapshot_max_length = DATA_BUFFER_LEN;
-	config.targets_max_length = DATA_BUFFER_LEN;
+	config.snapshot_max_length = updater.data_buffer_len;
+	config.targets_max_length = updater.data_buffer_len;
 }
 
 const char *get_role_name(enum tuf_role role)
@@ -361,7 +361,7 @@ static void hextobin(const char *str, uint8_t *bytes, size_t blen)
 	};
 
 	memset(bytes, 0, blen);
-	for (pos = 0; ((pos < (blen * 2)) && (pos < strlen(str))); pos += 2) {
+	for (pos = 0; ((pos < (blen * 2)) && (pos < strnlen(str, blen * 2))); pos += 2) {
 		idx0 = ((uint8_t)str[pos + 0] & 0x1F) ^ 0x10;
 		idx1 = ((uint8_t)str[pos + 1] & 0x1F) ^ 0x10;
 		bytes[pos / 2] = (uint8_t)(hashmap[idx0] << 4) | hashmap[idx1];
@@ -1162,6 +1162,15 @@ static int load_targets()
 	if (ret < 0)
 		return ret;
 
+	return TUF_SUCCESS;
+}
+
+int tuf_updater_init()
+{
+	memset(&updater, 0, sizeof(updater));
+	updater.reference_time = get_current_gmt_time();
+	updater.application_context = tuf_get_application_context();
+	tuf_get_application_buffer(&updater.data_buffer, &updater.data_buffer_len);
 	return TUF_SUCCESS;
 }
 
