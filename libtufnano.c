@@ -57,7 +57,9 @@ static time_t datetime_string_to_epoch(const char *s, time_t *epoch)
 	*epoch = mktime(&tm);
 	if (*epoch < 0)
 		return TUF_ERROR_INVALID_DATE_TIME;
+#ifdef __linux__
 	*epoch += tm.tm_gmtoff; /* compensate locale */
+#endif
 	return TUF_SUCCESS;
 }
 
@@ -169,7 +171,7 @@ static int parse_root_signed_metadata(const char *data, int len, struct tuf_root
 		return -EINVAL;
 	result = JSON_Validate(data, len);
 	if (result != JSONSuccess) {
-		log_error(("split_metadata: Got invalid JSON with len=%d: %.*s\n", len, len, data));
+		log_error(("parse_root_signed_metadata: Got invalid JSON with len=%d: %.*s\n", len, len, data));
 		return TUF_ERROR_INVALID_METADATA;
 	}
 
@@ -276,11 +278,14 @@ static int split_metadata(const unsigned char *data, int len, struct tuf_signatu
 	struct tuf_signature *current_signature;
 	int ret;
 
-	result = JSON_Validate((const char *)data, len);
-	if (len <= 0)
+	if (len <= 0 || len > updater.data_buffer_len) {
+		log_error(("split_metadata: Got invalid JSON len=%d\n", len));
 		return -EINVAL;
+	}
+
+	result = JSON_Validate((const char *)data, len);
 	if (result != JSONSuccess) {
-		log_error(("split_metadata: Got invalid JSON: %s\n", data));
+		log_error(("split_metadata: Got invalid JSON with len=%d ret=%d: %.*s\n", len, result, len, data));
 		return TUF_ERROR_INVALID_METADATA;
 	}
 
@@ -432,7 +437,7 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 	replace_escape_chars_from_b64_string((unsigned char *)cleaned_up_key_b64);
 
 	if ((ret = mbedtls_pk_parse_public_key(&pk, (const unsigned char *)cleaned_up_key_b64, strlen(cleaned_up_key_b64) + 1)) != 0) {
-		log_error(("verify_signature: failed. Could not read key. mbedtls_pk_parse_public_keyfile returned %d\n", ret));
+		log_error(("verify_signature: failed. Could not read key. mbedtls_pk_parse_public_keyfile returned 0x%04X\n", -ret));
 		log_error(("key: %s\n", cleaned_up_key_b64));
 		goto exit;
 	}
@@ -442,12 +447,13 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 		goto exit;
 	}
 
-	if ((ret = mbedtls_rsa_set_padding(mbedtls_pk_rsa(pk),
+	mbedtls_rsa_set_padding(mbedtls_pk_rsa(pk),
 					   MBEDTLS_RSA_PKCS_V21,
-					   MBEDTLS_MD_SHA256)) != 0) {
-		log_error(("verify_signature: Invalid padding\n"));
-		goto exit;
-	}
+					   MBEDTLS_MD_SHA256);
+	// if ((ret =  != 0) {
+	// 	log_error(("verify_signature: Invalid padding\n"));
+	// 	goto exit;
+	// }
 
 	/*
 	 * Compute the SHA-256 hash of the input file and
@@ -462,7 +468,12 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 
 	if ((ret = mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, hash, 0,
 				     signature_bytes, signature_bytes_len)) != 0) {
-		log_error(("verify_signature: failed  ! mbedtls_pk_verify returned %d\n", ret));
+
+		log_error(("verify_signature: failed  ! mbedtls_pk_verify returned 0x%04X\n", -ret));
+		log_error(("verify_signature: sig data=%.*s\n", 150,data));
+		log_error(("\n"));
+		log_error(("verify_signature: sig data+150=%s\n", data+150));
+		log_error(("verify_signature: strlen=%ld data_len=%d\n", strlen(data), data_len));
 		exit_code = ret;
 		goto exit;
 	}
@@ -542,6 +553,7 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 			continue;
 		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, signatures[signature_index].sig_len, key);
 
+		log_debug(("verify_data_signature_for_role role=%s, signature_index=%d ret=%d\n", get_role_name(role), signature_index, ret));
 		if (!ret) {
 			/* Found valid signature */
 			// log_debug(("found valid signature. verify_data_signature_for_role role=%d, signature_index=%d\n", role, signature_index));
@@ -549,10 +561,14 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 		}
 	}
 
-	if (valid_signatures_count < threshold)
+	if (valid_signatures_count < threshold) {
+		log_debug(("Role %s metadata is not valid. Valid sig count = %d threshold=%d\n", get_role_name(role), valid_signatures_count, threshold));
 		return TUF_ERROR_UNSIGNED_METADATA;
-	else
+	}
+	else {
+		log_debug(("Role %s metadata is valid. Valid sig count = %d\n", get_role_name(role), valid_signatures_count));
 		return TUF_SUCCESS;
+	}
 }
 
 /*
@@ -664,6 +680,7 @@ static int update_root(const unsigned char *data, size_t len, bool check_signatu
 	if (ret < 0)
 		return ret;
 
+	memcpy(&updater.root, &new_root, sizeof(updater.root));
 	if (check_signature) {
 		// check signature using current new root key
 		ret = verify_data_signature_for_role(signed_value, signed_value_len, signatures, ROLE_ROOT, &new_root);
@@ -671,8 +688,6 @@ static int update_root(const unsigned char *data, size_t len, bool check_signatu
 		if (ret < 0)
 			return ret;
 	}
-
-	memcpy(&updater.root, &new_root, sizeof(updater.root));
 
 	return ret;
 }
@@ -1040,7 +1055,7 @@ int load_local_metadata(enum tuf_role role, unsigned char *target_buffer, size_t
 {
 	int ret;
 
-	ret = read_local_file(role, target_buffer, limit, file_size);
+	ret = read_local_file(role, target_buffer, limit, file_size, updater.application_context);
 	return ret;
 }
 
@@ -1049,7 +1064,7 @@ int persist_metadata(enum tuf_role role, const unsigned char *data, size_t len)
 {
 	int ret;
 
-	ret = write_local_file(role, data, len);
+	ret = write_local_file(role, data, len, updater.application_context);
 	return ret;
 }
 
@@ -1063,7 +1078,8 @@ int download_metadata(enum tuf_role role, unsigned char *target_buffer, size_t l
 		snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
 	else
 		snprintf(role_file_name, sizeof(role_file_name), "%d.%s.json", version, role_name);
-	ret = fetch_file(role_file_name, target_buffer, limit, file_size);
+	ret = fetch_file(role_file_name, target_buffer, limit, file_size, updater.application_context);
+	log_debug(("fetch_file %s ret=%d file_size=%ld\n", role_file_name, ret, *file_size));
 	return ret;
 }
 
@@ -1146,7 +1162,7 @@ static int load_snapshot()
 	} else {
 		ret = update_snapshot(updater.data_buffer, file_size, true);
 		if (ret < 0)
-			log_debug(("local snapshot is not valid. Proceeding\n"));
+			log_info(("local snapshot is not valid. Proceeding\n"));
 		else
 			return TUF_SUCCESS;
 	}
@@ -1220,36 +1236,42 @@ static int load_targets()
 	return TUF_SUCCESS;
 }
 
-int tuf_updater_init()
+static int tuf_updater_init(void *application_context, time_t reference_time, char* data_buffer, size_t data_buffer_len)
 {
 	memset(&updater, 0, sizeof(updater));
-	updater.reference_time = get_current_gmt_time();
-	updater.application_context = tuf_get_application_context();
-	tuf_get_application_buffer(&updater.data_buffer, &updater.data_buffer_len);
+	updater.reference_time = reference_time;
+	updater.application_context = application_context;
+	updater.data_buffer = data_buffer;
+	updater.data_buffer_len = data_buffer_len;
 	return TUF_SUCCESS;
 }
 
-int refresh()
+int tuf_refresh(void *application_context, time_t reference_time, char* data_buffer, size_t data_buffer_len)
 {
 	int ret;
 
+	ret = tuf_updater_init(application_context, reference_time, data_buffer, data_buffer_len);
+
 	ret = load_root();
+	log_debug(("tuf_refresh: load_root ret=%d\n", ret));
 	if (ret < 0)
 		return ret;
-
 	ret = load_timestamp();
+	log_debug(("tuf_refresh: load_timestamp ret=%d\n", ret));
 	if (ret < 0)
 		return ret;
 
 	ret = load_snapshot();
+	log_debug(("tuf_refresh: load_snapshot ret=%d\n", ret));
 	if (ret < 0)
 		return ret;
 
 	ret = load_targets();
+	log_debug(("tuf_refresh: load_targets ret=%d\n", ret));
 	if (ret < 0)
 		return ret;
 
-	tuf_targets_processing_done(updater.application_context);
+	// tuf_targets_processing_done(updater.application_context);
 
 	return TUF_SUCCESS;
 }

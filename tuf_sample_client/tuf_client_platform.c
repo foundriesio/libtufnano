@@ -90,7 +90,7 @@ int remove_local_file_posix(const char *base_name, char *base_path)
 	return unlink(file_path);
 }
 
-int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
+int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size, void *application_context)
 {
 	/* For now, simulating files download using local copies */
 	int ret = read_file_posix(file_base_name, target_buffer, target_buffer_len, TUF_REMOTE_FILES_PATH, file_size);
@@ -101,7 +101,7 @@ int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t 
 	return 0;
 }
 
-int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size)
+int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size, void *application_context)
 {
 	const char *role_name = get_role_name(role);
 	char role_file_name[25];
@@ -116,7 +116,7 @@ int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t tar
 	return TUF_SUCCESS;
 }
 
-int write_local_file(enum tuf_role role, const unsigned char *data, size_t len)
+int write_local_file(enum tuf_role role, const unsigned char *data, size_t len, void *application_context)
 {
 	const char *role_name = get_role_name(role);
 	char role_file_name[20];
