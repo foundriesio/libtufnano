@@ -4,6 +4,7 @@
  *  and aktalizr-nano is ongoing
  */
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,6 +182,7 @@ int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const
 
 	// LogInfo(("handle_json_data: Parsing target data with len=%d", len));
 	JSONStatus_t result = JSON_Validate(data, len);
+
 	if (result != JSONSuccess) {
 		log_debug("handle_json_data: Got invalid targets JSON: %s\n", data);
 		return -1;
@@ -272,4 +274,14 @@ int tuf_get_application_buffer(unsigned char **buffer, size_t *buffer_size)
 	*buffer = data_buffer;
 	*buffer_size = DATA_BUFFER_LEN;
 	return 0;
+}
+
+void log_tuf_client(const char *fmt, ...)
+{
+	va_list args;
+
+	va_start(args, fmt);
+	printf(fmt, args);
+	va_end(args);
+	printf("\r\n");
 }

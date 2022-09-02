@@ -539,7 +539,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRefresh){
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
 	ret = tuf_refresh(tuf_get_application_context(), get_current_gmt_time(), data_buffer, data_buffer_len);
-	TEST_ASSERT_EQUAL(TUF_ERROR_SAME_VERSION, ret);
+	TEST_ASSERT_EQUAL(TUF_SAME_VERSION, ret);
 }
 
 int run_full_test(void)

@@ -139,8 +139,6 @@ struct tuf_config {
 
 time_t get_current_gmt_time();
 
-const char *get_role_name(enum tuf_role role);
-
 size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit, const char *base_path, size_t *file_size);
 size_t write_file_posix(const char *base_name, const char *data, size_t len, const char *base_path);
 int remove_local_file_posix(const char *base_name, char *base_path);
