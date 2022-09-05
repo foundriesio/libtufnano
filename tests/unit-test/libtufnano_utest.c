@@ -29,7 +29,7 @@ int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf
 	int ret = -1;
 	size_t file_size;
 
-	ret = fetch_file(file_base_name, updater.data_buffer, updater.data_buffer_len, &file_size, updater.application_context);
+	ret = tuf_client_fetch_file(file_base_name, updater.data_buffer, updater.data_buffer_len, &file_size, updater.application_context);
 	if (ret != 0)
 		return ret;
 

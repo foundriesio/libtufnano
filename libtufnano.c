@@ -30,7 +30,7 @@ void load_config()
 	config.targets_max_length = updater.data_buffer_len;
 }
 
-const char *get_role_name(enum tuf_role role)
+const char *tuf_get_role_name(enum tuf_role role)
 {
 	switch (role) {
 	case ROLE_ROOT: return _ROOT;
@@ -158,8 +158,8 @@ static int parse_base_metadata(const char *data, int len, enum tuf_role role, st
 
 	strncpy(lower_case_type, out_value, sizeof(lower_case_type));
 	lower_case_type[0] = tolower(lower_case_type[0]); /* Allowing first char to be upper case */
-	if (strncmp(lower_case_type, get_role_name(role), out_value_len)) {
-		log_error(("parse_root_signed_metadata: Expected \"_type\" = %s, got %.*s instead", get_role_name(role), (int)out_value_len, out_value));
+	if (strncmp(lower_case_type, tuf_get_role_name(role), out_value_len)) {
+		log_error(("parse_root_signed_metadata: Expected \"_type\" = %s, got %.*s instead", tuf_get_role_name(role), (int)out_value_len, out_value));
 		return TUF_ERROR_INVALID_TYPE;
 	}
 
@@ -587,7 +587,7 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 			continue;
 		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, signatures[signature_index].sig_len, key);
 
-		log_debug(("verify_data_signature_for_role role=%s, signature_index=%d ret=%d", get_role_name(role), signature_index, ret));
+		log_debug(("verify_data_signature_for_role role=%s, signature_index=%d ret=%d", tuf_get_role_name(role), signature_index, ret));
 		if (!ret) {
 			/* Found valid signature */
 			// log_debug(("found valid signature. verify_data_signature_for_role role=%d, signature_index=%d", role, signature_index));
@@ -596,10 +596,10 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 	}
 
 	if (valid_signatures_count < threshold) {
-		log_debug(("Role %s metadata is not valid. Valid sig count = %d threshold=%d", get_role_name(role), valid_signatures_count, threshold));
+		log_debug(("Role %s metadata is not valid. Valid sig count = %d threshold=%d", tuf_get_role_name(role), valid_signatures_count, threshold));
 		return TUF_ERROR_UNSIGNED_METADATA;
 	} else {
-		log_debug(("Role %s metadata is valid. Valid sig count = %d", get_role_name(role), valid_signatures_count));
+		log_debug(("Role %s metadata is valid. Valid sig count = %d", tuf_get_role_name(role), valid_signatures_count));
 		return TUF_SUCCESS;
 	}
 }
@@ -642,7 +642,7 @@ static int verify_length_and_hashes(const unsigned char *data, size_t len, enum 
 		return ret;
 
 	if (len != expected_length) {
-		log_error(("Expected %s length %ld, got %ld", get_role_name(role), expected_length, len));
+		log_error(("Expected %s length %ld, got %ld", tuf_get_role_name(role), expected_length, len));
 		return TUF_ERROR_LENGTH_VERIFY_ERROR;
 	}
 
@@ -892,11 +892,14 @@ static int parse_snapshot_signed_metadata(const char *data, int len, struct tuf_
 static int parse_targets_metadata(const char *data, int len, struct tuf_targets *target)
 {
 	JSONStatus_t result;
+	int ret;
+
+#ifdef TUF_ENABLE_SINGLE_TARGET_CALLBACK
 	const char *out_value;
 	size_t out_value_len;
 	size_t start, next;
 	JSONPair_t pair;
-	int ret;
+#endif
 
 	memset(target, 0, sizeof(*target));
 	result = JSON_Validate(data, len);
@@ -905,6 +908,11 @@ static int parse_targets_metadata(const char *data, int len, struct tuf_targets 
 		return TUF_ERROR_INVALID_METADATA;
 	}
 
+	ret = parse_base_metadata(data, len, ROLE_TARGETS, &target->base);
+	if (ret < 0)
+		return ret;
+
+#ifdef TUF_ENABLE_SINGLE_TARGET_CALLBACK
 	result = JSON_SearchConst(data, len, "targets", strlen("targets"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
 		log_error(("parse_targets_metadata: \"targets\" not found"));
@@ -921,10 +929,10 @@ static int parse_targets_metadata(const char *data, int len, struct tuf_targets 
 			break;
 		}
 	}
+#endif
 
 	target->loaded = true;
-
-	return parse_base_metadata(data, len, ROLE_TARGETS, &target->base);
+	return TUF_SUCCESS;
 }
 
 static int check_final_timestamp()
@@ -1100,12 +1108,11 @@ static int update_targets(const unsigned char *data, size_t len, bool check_sign
 }
 
 
-/* TODO: Not sure if read_local_file should receive string or enum tuf_role */
 int load_local_metadata(enum tuf_role role, unsigned char *target_buffer, size_t limit, size_t *file_size)
 {
 	int ret;
 
-	ret = read_local_file(role, target_buffer, limit, file_size, updater.application_context);
+	ret = tuf_client_read_local_file(role, target_buffer, limit, file_size, updater.application_context);
 	return ret;
 }
 
@@ -1114,13 +1121,13 @@ int persist_metadata(enum tuf_role role, const unsigned char *data, size_t len)
 {
 	int ret;
 
-	ret = write_local_file(role, data, len, updater.application_context);
+	ret = tuf_client_write_local_file(role, data, len, updater.application_context);
 	return ret;
 }
 
 int download_metadata(enum tuf_role role, unsigned char *target_buffer, size_t limit, int version, size_t *file_size)
 {
-	const char *role_name = get_role_name(role);
+	const char *role_name = tuf_get_role_name(role);
 	char role_file_name[30];
 	int ret;
 
@@ -1128,7 +1135,7 @@ int download_metadata(enum tuf_role role, unsigned char *target_buffer, size_t l
 		snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
 	else
 		snprintf(role_file_name, sizeof(role_file_name), "%d.%s.json", version, role_name);
-	ret = fetch_file(role_file_name, target_buffer, limit, file_size, updater.application_context);
+	ret = tuf_client_fetch_file(role_file_name, target_buffer, limit, file_size, updater.application_context);
 	log_debug(("fetch_file %s ret=%d file_size=%ld", role_file_name, ret, *file_size));
 	return ret;
 }
@@ -1191,13 +1198,12 @@ static int load_timestamp()
 		return ret;
 	ret = update_timestamp(updater.data_buffer, file_size, true);
 	if (ret < 0) {
-		if (ret == TUF_SAME_VERSION) {
+		if (ret == TUF_SAME_VERSION)
 			/*
 			 * If the new timestamp version is the same as current, discard the
 			 * new timestamp. This is normal and it shouldn't raise any error.
 			 */
 			ret = TUF_SUCCESS;
-		}
 		return ret;
 	}
 	ret = persist_metadata(ROLE_TIMESTAMP, updater.data_buffer, file_size);

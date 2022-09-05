@@ -58,17 +58,19 @@ enum tuf_role {
 };
 
 
-/* Application specific code */
-// void *tuf_get_application_context();
-int tuf_parse_single_target(const char *target_key, size_t targte_key_len, const char *data, size_t len, void *application_context);
-// int tuf_targets_processing_done(void *application_context);
-int fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size, void *application_context);
-int read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size, void *application_context);
-int write_local_file(enum tuf_role role, const unsigned char *data, size_t len, void *application_context);
-// int tuf_get_application_buffer(unsigned char **buffer, size_t *buffer_size);
-
+/* tuf_refresh is expected to be called periodically by the TUF client application  */
 int tuf_refresh(void *application_context, time_t reference_time, unsigned char *data_buffer, size_t data_buffer_len);
-const char *get_role_name(enum tuf_role role);
+
+/* Functions that might be useful in the TUF client application */
+const char *tuf_get_role_name(enum tuf_role role);
 const char *tuf_get_error_string(int error);
+
+/*
+ * Functions that must be implemented by the tuf client application,
+ * and that are called by libtufnano
+ */
+int tuf_client_read_local_file(enum tuf_role role, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size, void *application_context);
+int tuf_client_write_local_file(enum tuf_role role, const unsigned char *data, size_t len, void *application_context);
+int tuf_client_fetch_file(const char *file_base_name, unsigned char *target_buffer, size_t target_buffer_len, size_t *file_size, void *application_context);
 
 #endif
