@@ -191,7 +191,7 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 	if (ret < 0)
 		return -30;
 
-	hextobin(hash256_b16, hash256, TUF_HASH256_LEN);
+	hex_to_bin(hash256_b16, hash256, TUF_HASH256_LEN);
 	log_debug(("Verifying hash for %s\n", file_base_name));
 	return verify_data_hash_sha256(updater.data_buffer, file_size, hash256, TUF_HASH256_LEN);
 }

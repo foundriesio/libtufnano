@@ -58,7 +58,19 @@ enum tuf_role {
 };
 
 
-/* tuf_refresh is expected to be called periodically by the TUF client application  */
+/*
+ * tuf_refresh is expected to be called periodically by the TUF client application
+ *
+ * The data_buffer is used during processing of the roles metadata, should big
+ * enough to fit every individual role metadata. If any role metada is bugger
+ * than data_buffer_len, a TUF_ERROR_DATA_EXCEEDS_BUFFER_SIZE error is returned.
+ *
+ * data_buffer recommended size is 10KB.
+ *
+ * If the return value is TUF_SUCCESS, the data_buffer is loaded with a null
+ * terminated string corresponding to the latest targets metadata, verified
+ * according to the TUF specification
+ */
 int tuf_refresh(void *application_context, time_t reference_time, unsigned char *data_buffer, size_t data_buffer_len);
 
 /* Functions that might be useful in the TUF client application */

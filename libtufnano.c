@@ -404,24 +404,23 @@ static void print_hex(const char *title, const unsigned char buf[], size_t len)
 /*
  * Convert a hex string in a bytes array.
  */
-/* TODO: Verify safety of this function */
-static void hextobin(const char *str, uint8_t *bytes, size_t blen)
+static int hex_to_bin(const unsigned char *s, unsigned char *dst, size_t len)
 {
-	uint8_t pos, idx0, idx1;
-	/* mapping of ASCII characters to hex values */
-	const uint8_t hashmap[] = {
-		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, // 01234567
-		0x08, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 89:;<=>?
-		0x00, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x00, // @ABCDEFG
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // HIJKLMNO
-	};
+	size_t i, j, k;
 
-	memset(bytes, 0, blen);
-	for (pos = 0; ((pos < (blen * 2)) && (pos < strnlen(str, blen * 2))); pos += 2) {
-		idx0 = ((uint8_t)str[pos + 0] & 0x1F) ^ 0x10;
-		idx1 = ((uint8_t)str[pos + 1] & 0x1F) ^ 0x10;
-		bytes[pos / 2] = (uint8_t)(hashmap[idx0] << 4) | hashmap[idx1];
+	memset(dst, 0, len);
+	for (i = 0; i < len * 2; i++, s++) {
+		if (*s >= '0' && *s <= '9') j = *s - '0'; else
+		if (*s >= 'A' && *s <= 'F') j = *s - '7'; else
+		if (*s >= 'a' && *s <= 'f') j = *s - 'W'; else
+			return -1;
+
+		k = ((i & 1) != 0) ? j : j << 4;
+
+		dst[i >> 1] = (unsigned char)(dst[i >> 1] | k);
 	}
+
+	return 0;
 }
 
 /*
@@ -741,7 +740,7 @@ static int parse_tuf_file_info(const char *data, size_t len, struct tuf_role_fil
 		log_error(("parse_timestamp_signed_metadata: invalid \"hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256\" length: %ld", out_value_len));
 		return TUF_ERROR_INVALID_FIELD_VALUE;
 	}
-	hextobin(out_value, target->hash_sha256, TUF_HASH256_LEN);
+	hex_to_bin(out_value, target->hash_sha256, TUF_HASH256_LEN);
 
 	result = JSON_SearchConst(data, len, "length", strlen("length"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
