@@ -44,6 +44,7 @@ const char *get_role_name(enum tuf_role role)
 const char *tuf_get_error_string(int error)
 {
 	switch (error) {
+	case TUF_SUCCESS: return "TUF_SUCCESS";
 	case TUF_ERROR_DATA_EXCEEDS_BUFFER_SIZE: return "TUF_ERROR_DATA_EXCEEDS_BUFFER_SIZE";
 	case TUF_ERROR_INVALID_HASH: return "TUF_ERROR_INVALID_HASH";
 	case TUF_ERROR_INVALID_HASH_LENGTH: return "TUF_ERROR_INVALID_HASH_LENGTH";
@@ -506,7 +507,7 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 		log_error(("verify_signature: sig data=%.*s", 150, data));
 		log_error((""));
 		log_error(("verify_signature: sig data+150=%s", data + 150));
-		log_error(("verify_signature: strlen=%ld data_len=%d", strlen((const char*)data), data_len));
+		log_error(("verify_signature: strlen=%ld data_len=%d", strlen((const char *)data), data_len));
 		exit_code = ret;
 		goto exit;
 	}
@@ -1141,7 +1142,7 @@ static int load_root()
 
 	ret = load_local_metadata(ROLE_ROOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
-		log_debug(("local root not found"));
+		log_debug(("load_root: local root not found"));
 		return ret;
 	}
 
@@ -1178,11 +1179,11 @@ static int load_timestamp()
 
 	ret = load_local_metadata(ROLE_TIMESTAMP, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
-		log_debug(("local timestamp not found. Proceeding"));
+		log_debug(("load_timestamp: local timestamp not found. Proceeding"));
 	} else {
 		ret = update_timestamp(updater.data_buffer, file_size, true);
 		if (ret < 0)
-			log_debug(("local timestamp is not valid. Proceeding"));
+			log_debug(("load_timestamp: local timestamp is not valid. Proceeding"));
 	}
 
 	ret = download_metadata(ROLE_TIMESTAMP, updater.data_buffer, updater.data_buffer_len, 0, &file_size);
@@ -1215,23 +1216,25 @@ static int load_snapshot()
 
 	ret = load_local_metadata(ROLE_SNAPSHOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
-		log_debug(("local snapshot not found. Proceeding"));
+		log_debug(("load_snapshot: local snapshot not found. Proceeding"));
 	} else {
 		ret = update_snapshot(updater.data_buffer, file_size, true);
-		if (ret < 0)
-			log_info(("local snapshot is not valid. Proceeding"));
-		else
+		if (ret < 0) {
+			log_info(("load_snapshot: local snapshot is not valid. Proceeding"));
+		} else {
+			log_debug(("load_snapshot: local snapshot is valid: do not downloading new one"));
 			return TUF_SUCCESS;
+		}
 	}
 
 	if (!updater.timestamp.loaded) {
-		log_error(("BUG: !updater.timestamp.loaded"));
+		log_error(("load_snapshot: BUG: !updater.timestamp.loaded"));
 		return TUF_ERROR_BUG;
 	}
 
 	max_length = config.snapshot_max_length;
 	if (updater.timestamp.snapshot_file.length > max_length) {
-		log_debug(("expected remote snapshot size is too big. Max=%ld, expected=%ld. Not even trying to download it", max_length, updater.snapshot.targets_file.length));
+		log_debug(("load_snapshot: expected remote snapshot size is too big. Max=%ld, expected=%ld. Not even trying to download it", max_length, updater.snapshot.targets_file.length));
 		return TUF_ERROR_DATA_EXCEEDS_BUFFER_SIZE;
 	}
 	if (updater.timestamp.snapshot_file.length)
@@ -1263,25 +1266,25 @@ static int load_targets()
 
 	ret = load_local_metadata(ROLE_TARGETS, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
-		log_debug(("local targets not found. Proceeding"));
+		log_debug(("load_targets: local targets not found. Proceeding"));
 	} else {
 		ret = update_targets(updater.data_buffer, file_size, true);
 		if (ret < 0) {
-			log_debug(("local targets is not valid. Proceeding"));
+			log_debug(("load_targets: local targets is not valid. Proceeding"));
 		} else {
-			log_debug(("local targets is valid: not downloading new one"));
+			log_debug(("load_targets: local targets is valid: do not downloading new one"));
 			return TUF_SUCCESS;
 		}
 	}
 
 	if (!updater.snapshot.loaded) {
-		log_error(("Snapshot role is not loaded"));
+		log_error(("load_targets: Snapshot role is not loaded"));
 		return TUF_ERROR_BUG;
 	}
 
 	max_length = config.targets_max_length;
 	if (updater.snapshot.targets_file.length > max_length) {
-		log_debug(("expected remote targets size is too big. Max=%ld, expected=%ld. Not even trying to download it", max_length, updater.snapshot.targets_file.length));
+		log_debug(("load_targets: expected remote targets size is too big. Max=%ld, expected=%ld. Not even trying to download it", max_length, updater.snapshot.targets_file.length));
 		return TUF_ERROR_DATA_EXCEEDS_BUFFER_SIZE;
 	}
 
