@@ -1189,8 +1189,16 @@ static int load_timestamp()
 	if (ret < 0)
 		return ret;
 	ret = update_timestamp(updater.data_buffer, file_size, true);
-	if (ret < 0)
+	if (ret < 0) {
+		if (ret == TUF_SAME_VERSION) {
+			/*
+			 * If the new timestamp version is the same as current, discard the
+			 * new timestamp. This is normal and it shouldn't raise any error.
+			 */
+			ret = TUF_SUCCESS;
+		}
 		return ret;
+	}
 	ret = persist_metadata(ROLE_TIMESTAMP, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
