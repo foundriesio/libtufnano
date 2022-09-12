@@ -586,7 +586,7 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 			continue;
 		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, signatures[signature_index].sig_len, key);
 
-		log_debug(("verify_data_signature_for_role role=%s, signature_index=%d ret=%d", tuf_get_role_name(role), signature_index, ret));
+		// log_debug(("verify_data_signature_for_role role=%s, signature_index=%d ret=%d", tuf_get_role_name(role), signature_index, ret));
 		if (!ret) {
 			/* Found valid signature */
 			// log_debug(("found valid signature. verify_data_signature_for_role role=%d, signature_index=%d", role, signature_index));
@@ -595,10 +595,10 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 	}
 
 	if (valid_signatures_count < threshold) {
-		log_debug(("Role %s metadata is not valid. Valid sig count = %d threshold=%d", tuf_get_role_name(role), valid_signatures_count, threshold));
+		log_debug(("verify_data_signature_for_role: Role %s metadata is not valid. %d valid signatures(s). Expected at least %d", tuf_get_role_name(role), valid_signatures_count, threshold));
 		return TUF_ERROR_UNSIGNED_METADATA;
 	} else {
-		log_debug(("Role %s metadata is valid. Valid sig count = %d", tuf_get_role_name(role), valid_signatures_count));
+		log_debug(("verify_data_signature_for_role: Role %s metadata is valid. %d valid signature(s)", tuf_get_role_name(role), valid_signatures_count));
 		return TUF_SUCCESS;
 	}
 }
@@ -675,6 +675,7 @@ static int split_metadata_and_check_signature(const unsigned char *data, size_t 
 
 	if (role == ROLE_SNAPSHOT || role == ROLE_TARGETS) {
 		ret = verify_length_and_hashes(data, file_size, role);
+		log_debug(("Hash and size of %s metadata %smatch the expected values", tuf_get_role_name(role), ret == TUF_SUCCESS? "": "do not "));
 		if (ret != TUF_SUCCESS)
 			return ret;
 	}
@@ -972,6 +973,7 @@ static int check_final_snapshot()
 		log_error(("Expected snapshot version %d, got %d", updater.timestamp.snapshot_file.version, updater.snapshot.base.version));
 		return TUF_ERROR_BAD_VERSION_NUMBER;
 	}
+	log_debug(("Snapshot is valid: Not expired and matches the expected version"));
 	return TUF_SUCCESS;
 }
 
