@@ -531,14 +531,17 @@ TEST(Full_LibTufNAno, libTufNano_TestRefresh){
 	int ret;
 	size_t data_buffer_len;
 	unsigned char* data_buffer;
+	/* on an actual implementation, get_current_gmt_time() would be used */
+	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
 
 	remove_all_local_role_files();
 
 	tuf_get_application_buffer(&data_buffer, &data_buffer_len);
-	ret = tuf_refresh(tuf_get_application_context(), get_current_gmt_time(), data_buffer, data_buffer_len);
+	ret = tuf_refresh(tuf_get_application_context(), reference_time, data_buffer, data_buffer_len);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
-	ret = tuf_refresh(tuf_get_application_context(), get_current_gmt_time(), data_buffer, data_buffer_len);
+	reference_time += 10;
+	ret = tuf_refresh(tuf_get_application_context(), reference_time, data_buffer, data_buffer_len);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 }
 
