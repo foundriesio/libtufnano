@@ -6,4 +6,7 @@ all:
 	$(CC) -g -c ../coreJSON/source/core_json.c -o build/core_json.o -I ../coreJSON/source/include -DJSON_QUERY_KEY_SEPARATOR=\'/\'
 	$(CC) -g -c ../Unity/src/unity.c -o build/unity.o -I ../Unity/src
 	$(CC) -g -c ../Unity/extras/fixture/src/unity_fixture.c -o build/unity_fixture.o -I ../Unity/src -I ../Unity/fixture/src  -I ../Unity/extras/memory/src
+	$(CC) -g -c tufnanoclient.c -o build/tufnanoclient.o -I tuf_sample_client/ -I ../coreJSON/source/include -I ../mbedtls/include/
 	$(CC) -g  ../mbedtls/library/*.o  build/core_json.o build/unity.o build/unity_fixture.o build/tuf_sample_client.o build/libtufnano_utest.o build/tuf_client_platform.o -o tuftest -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract -fstack-protector
+
+	$(CC) -g build/libtufnano.o build/tufnanoclient.o ../mbedtls/library/*.o  build/core_json.o build/tuf_sample_client.o build/tuf_client_platform.o -o main -fsanitize=address,leak,undefined,pointer-compare,pointer-subtract -fstack-protector
