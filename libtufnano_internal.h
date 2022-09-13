@@ -40,7 +40,7 @@
 
 #ifndef TUF_KEY_VAL_MAX_LEN
 /* TODO: save space in memory by keeping decoded key instead of base64 string */
-#define TUF_KEY_VAL_MAX_LEN 500
+#define TUF_KEY_VAL_MAX_LEN 1000
 #endif
 
 

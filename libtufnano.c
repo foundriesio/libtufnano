@@ -586,10 +586,11 @@ static int verify_data_signature_for_role(const unsigned char *signed_value, siz
 			continue;
 		ret = verify_signature(signed_value, signed_value_len, signatures[signature_index].sig, signatures[signature_index].sig_len, key);
 
-		// log_debug(("verify_data_signature_for_role role=%s, signature_index=%d ret=%d", tuf_get_role_name(role), signature_index, ret));
+		log_debug(("verify_data_signature_for_role role=%s, signature_index=%d ret=%d", tuf_get_role_name(role), signature_index, ret));
+		printf(">>> verify_data_signature_for_role role=%s, signature_index=%d ret=%d, key ID: %s\n", tuf_get_role_name(role), signature_index, ret, key->id);
 		if (!ret) {
 			/* Found valid signature */
-			// log_debug(("found valid signature. verify_data_signature_for_role role=%d, signature_index=%d", role, signature_index));
+			log_debug(("found valid signature. verify_data_signature_for_role role=%d, signature_index=%d", role, signature_index));
 			valid_signatures_count++;
 		}
 	}
@@ -882,6 +883,7 @@ static int parse_snapshot_signed_metadata(const char *data, int len, struct tuf_
 	if (result == JSONSuccess)
 		parse_tuf_file_info(out_value, out_value_len, &target->root_file);
 
+	
 	/* Get targets.json file info */
 	result = JSON_SearchConst(data, len, "meta" TUF_JSON_QUERY_KEY_SEPARATOR "targets.json", strlen("meta" TUF_JSON_QUERY_KEY_SEPARATOR "targets.json"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
