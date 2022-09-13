@@ -18,7 +18,7 @@
 #define TUF_LOCAL_FILES_PATH "nvs"
 
 /* Emulate files download */
-#define TUF_REMOTE_FILES_PATH "tests/sample_jsons/rsa"
+#define TUF_REMOTE_FILES_PATH "tuf"
 
 #define MAX_FILE_PATH_LEN 150
 
