@@ -691,12 +691,11 @@ static int split_metadata_and_check_signature(const unsigned char *data, size_t 
 }
 
 /*
- * Load the Root role metadata, validating it, and loading the resulting
- * information into updater struct.
+ * Load the Root role metadata, validating it (if verify=true),
+ * and loading the resulting information into updater struct.
  */
-static int update_root(const unsigned char *data, size_t len, bool check_signature)
+static int update_root(const unsigned char *data, size_t len, bool verify)
 {
-	// TODO: make sure check_signature is false only during unit testing
 	int ret;
 	const unsigned char *signed_value;
 	int signed_value_len;
@@ -704,7 +703,8 @@ static int update_root(const unsigned char *data, size_t len, bool check_signatu
 	struct tuf_root new_root;
 
 	memset(&new_root, 0, sizeof(new_root));
-	ret = split_metadata_and_check_signature(data, len, ROLE_ROOT, signatures, &signed_value, &signed_value_len, check_signature);
+	/* 5.3.4 - Check for an arbitrary software attack (verify=true) only) */
+	ret = split_metadata_and_check_signature(data, len, ROLE_ROOT, signatures, &signed_value, &signed_value_len, verify);
 	if (ret != 0)
 		return ret;
 
@@ -713,9 +713,17 @@ static int update_root(const unsigned char *data, size_t len, bool check_signatu
 	if (ret < 0)
 		return ret;
 
+	if (verify && new_root.base.version != updater.root.base.version + 1) {
+		/* 5.3.5 - Check for a rollback attack */
+		log_error(("Expected root version %d instead got version %d", updater.root.base.version + 1, new_root.base.version));
+		return TUF_ERROR_BAD_VERSION_NUMBER;
+	}
+
+	/* 5.3.7 - Set the trusted root metadata file */
 	memcpy(&updater.root, &new_root, sizeof(updater.root));
-	if (check_signature) {
-		// check signature using current new root key
+	if (verify) {
+		/* 5.3.4 part 2 - Check for an arbitrary software attack */
+		/* check signature using current new root key */
 		ret = verify_data_signature_for_role(signed_value, signed_value_len, signatures, ROLE_ROOT, &new_root);
 		// log_debug(("Verifying against new root ret = %d", ret));
 		if (ret < 0)
