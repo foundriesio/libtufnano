@@ -136,6 +136,7 @@ int verify_data_signature(const unsigned char *data, size_t data_len, const char
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
 
+	memset(&signatures, 0, sizeof(signatures));
 	ret = split_metadata(data, data_len, signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
 	if (ret < 0)
 		return ret;
