@@ -659,7 +659,7 @@ static int verify_length_and_hashes(const unsigned char *data, size_t len, enum 
  * Asssumes "signed" section is a canonical JSON, avoiding the need to parse and
  * re-generate a JSON string before validation.
  */
-static int split_metadata_and_check_signature(const unsigned char *data, size_t file_size, enum tuf_role role, struct tuf_signature *signatures, const unsigned char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
+static int split_metadata_and_check_signature(const unsigned char *data, size_t file_size, enum tuf_role role, struct tuf_signature *signatures, const unsigned char **signed_value, int *signed_value_len, bool verify)
 {
 	int ret;
 
@@ -667,10 +667,10 @@ static int split_metadata_and_check_signature(const unsigned char *data, size_t 
 	if (ret < 0)
 		return ret;
 
-	if (role != ROLE_ROOT && !updater.root.loaded)
+	if (verify && role != ROLE_ROOT && !updater.root.loaded)
 		return TUF_ERROR_ROOT_ROLE_NOT_LOADED;
 
-	if (!check_signature_and_hashes)
+	if (!verify)
 		return TUF_SUCCESS;
 
 	if (role == ROLE_SNAPSHOT || role == ROLE_TARGETS) {
@@ -811,7 +811,7 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 		return TUF_ERROR_SNAPSHOT_ROLE_LOADED;
 	}
 
-	/* client workflow 5.3.10: Make sure final root is not expired. */
+	/*  5.3.10: Make sure final root is not expired. */
 	if (is_expired(updater.root.base.expires_epoch, updater.reference_time)) {
 		log_error(("Final root.json is expired"));
 		return TUF_ERROR_EXPIRED_METADATA;
@@ -824,11 +824,12 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 
 	memset(&new_timestamp, 0, sizeof(new_timestamp));
 
+	/* 5.4.2 - Check for an arbitrary software attack */
 	ret = split_metadata_and_check_signature(data, len, ROLE_TIMESTAMP, signatures, &signed_value, &signed_value_len, check_signature);
 	if (ret != 0)
 		return ret;
 
-	// Parsing Timestamp
+	/* Parsing Timestamp */
 	ret = parse_timestamp_signed_metadata((const char *)signed_value, signed_value_len, &new_timestamp);
 	if (ret < 0)
 		return ret;
@@ -837,7 +838,7 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 	 * check for a rollback attack
 	 */
 	if (updater.timestamp.loaded) {
-		/* Prevent rolling back timestamp version */
+		/* 5.4.3.1 - Prevent rolling back timestamp version */
 		if (new_timestamp.base.version < updater.timestamp.base.version) {
 			log_error(("New timestamp version %d must be >= %d", new_timestamp.base.version, updater.timestamp.base.version));
 			return TUF_ERROR_BAD_VERSION_NUMBER;
@@ -846,7 +847,7 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 		if (new_timestamp.base.version == updater.timestamp.base.version)
 			return TUF_SAME_VERSION;
 
-		/* Prevent rolling back snapshot version */
+		/* 5.4.3.1 - Prevent rolling back snapshot version */
 		if (new_timestamp.snapshot_file.version < updater.timestamp.snapshot_file.version) {
 			log_error(("New snapshot version %d must be >= %d", new_timestamp.snapshot_file.version, updater.timestamp.snapshot_file.version));
 			return TUF_ERROR_BAD_VERSION_NUMBER;
@@ -854,7 +855,7 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 	}
 
 	/*
-	 * expiry not checked to allow old timestamp to be used for rollback
+	 * 5.4.5 - expiry not checked to allow old timestamp to be used for rollback
 	 * protection of new timestamp: expiry is checked in update_snapshot()
 	 */
 
@@ -876,13 +877,10 @@ static int parse_snapshot_signed_metadata(const char *data, int len, struct tuf_
 		return TUF_ERROR_INVALID_METADATA;
 	}
 
-	/* Get root.json file info */
+	/* Get (optional) root.json file info */
 	result = JSON_SearchConst(data, len, "meta" TUF_JSON_QUERY_KEY_SEPARATOR "root.json", strlen("meta" TUF_JSON_QUERY_KEY_SEPARATOR "root.json"), &out_value, &out_value_len, NULL);
-	if (result != JSONSuccess) {
-		log_error(("parse_timestamp_signed_metadata: \"meta" TUF_JSON_QUERY_KEY_SEPARATOR "root.json\" not found"));
-		return TUF_ERROR_FIELD_MISSING;
-	}
-	parse_tuf_file_info(out_value, out_value_len, &target->root_file);
+	if (result == JSONSuccess)
+		parse_tuf_file_info(out_value, out_value_len, &target->root_file);
 
 	/* Get targets.json file info */
 	result = JSON_SearchConst(data, len, "meta" TUF_JSON_QUERY_KEY_SEPARATOR "targets.json", strlen("meta" TUF_JSON_QUERY_KEY_SEPARATOR "targets.json"), &out_value, &out_value_len, NULL);
@@ -972,11 +970,13 @@ static int check_final_snapshot()
 		return TUF_ERROR_BUG;
 	}
 
+	/* 5.5.6 - Check for a freeze attack */
 	if (is_expired(updater.snapshot.base.expires_epoch, updater.reference_time)) {
 		log_error(("snapshot.json is expired"));
 		return TUF_ERROR_EXPIRED_METADATA;
 	}
 
+	/* 5.5.4 - Check against timestamp role’s snapshot version */
 	if (updater.snapshot.base.version != updater.timestamp.snapshot_file.version) {
 		log_error(("Expected snapshot version %d, got %d", updater.timestamp.snapshot_file.version, updater.snapshot.base.version));
 		return TUF_ERROR_BAD_VERSION_NUMBER;
@@ -1013,6 +1013,8 @@ static int update_snapshot(const unsigned char *data, size_t len, bool check_sig
 	if (ret < 0)
 		return ret;
 
+	/* 5.5.2 - Check against timestamp role’s snapshot hash */
+	/* 5.5.3 - Check for an arbitrary software attack */
 	ret = split_metadata_and_check_signature(data, len, ROLE_SNAPSHOT, signatures, &signed_value, &signed_value_len, check_signature);
 	if (ret != 0)
 		return ret;
@@ -1033,7 +1035,7 @@ static int update_snapshot(const unsigned char *data, size_t len, bool check_sig
 		}
 
 		/* Prevent rollback of root version */
-		if (new_snapshot.root_file.version < updater.snapshot.root_file.version) {
+		if (new_snapshot.root_file.loaded && new_snapshot.root_file.version < updater.snapshot.root_file.version) {
 			log_error(("Expected root version %d, got %d", updater.snapshot.root_file.version, new_snapshot.root_file.version));
 			return TUF_ERROR_BAD_VERSION_NUMBER;
 		}
@@ -1044,7 +1046,7 @@ static int update_snapshot(const unsigned char *data, size_t len, bool check_sig
 			return TUF_ERROR_REPOSITORY_ERROR;
 		}
 
-		/* Prevent rollback of targets version */
+		/* 5.5.5 - Prevent rollback of targets version */
 		if (new_snapshot.targets_file.version < updater.snapshot.targets_file.version) {
 			log_error(("Expected targets version >= %d, got %d", updater.snapshot.targets_file.version, new_snapshot.targets_file.version));
 			return TUF_ERROR_BAD_VERSION_NUMBER;
@@ -1092,6 +1094,8 @@ static int update_targets(const unsigned char *data, size_t len, bool check_sign
 		return TUF_ERROR_ROOT_ROLE_NOT_LOADED;
 	}
 
+	/* 5.6.2 - Check against snapshot role’s targets hash */
+	/* 5.6.3 - Check for an arbitrary software attack */
 	ret = split_metadata_and_check_signature(data, len, ROLE_TARGETS, signatures, &signed_value, &signed_value_len, check_signature);
 	if (ret != 0)
 		return ret;
@@ -1100,11 +1104,13 @@ static int update_targets(const unsigned char *data, size_t len, bool check_sign
 	if (ret < 0)
 		return ret;
 
+	/* 5.6.4 - Check against snapshot role’s targets version */
 	if (updater.snapshot.targets_file.version != new_targets.base.version) {
 		log_error(("Expected targets v%d, got v%d", updater.snapshot.targets_file.version, new_targets.base.version));
 		return TUF_ERROR_BAD_VERSION_NUMBER;
 	}
 
+	/* 5.6.5 - Check for a freeze attack */
 	if (is_expired(new_targets.base.expires_epoch, updater.reference_time)) {
 		log_error(("New targets is expired"));
 		return TUF_ERROR_EXPIRED_METADATA;
@@ -1149,12 +1155,10 @@ int download_metadata(enum tuf_role role, unsigned char *target_buffer, size_t l
 	return ret;
 }
 
-static int load_root()
+static int load_local_root()
 {
-	// Update the root role
-	size_t file_size;
 	int ret;
-	int lower_bound, upper_bound, next_version;
+	size_t file_size;
 
 	ret = load_local_metadata(ROLE_ROOT, updater.data_buffer, updater.data_buffer_len, &file_size);
 	if (ret < 0) {
@@ -1162,13 +1166,24 @@ static int load_root()
 		return ret;
 	}
 
-	ret = update_root(updater.data_buffer, file_size, true);
+	ret = update_root(updater.data_buffer, file_size, false);
 	if (ret < 0)
 		return ret;
+
+	return TUF_SUCCESS;
+}
+
+static int load_root()
+{
+	// Update the root role
+	size_t file_size;
+	int ret;
+	int lower_bound, upper_bound, next_version;
 
 	lower_bound = updater.root.base.version + 1;
 	upper_bound = lower_bound + config.max_root_rotations;
 
+	/* 5.3.3 - Try downloading version N+1 of the root metadata file */
 	for (next_version = lower_bound; next_version < upper_bound; next_version++) {
 		ret = download_metadata(ROLE_ROOT, updater.data_buffer, updater.data_buffer_len, next_version, &file_size);
 		if (ret < 0) {
@@ -1180,6 +1195,8 @@ static int load_root()
 		ret = update_root(updater.data_buffer, file_size, true);
 		if (ret < 0)
 			return ret;
+
+		/* 5.3.8 - Persist root metadata */
 		ret = persist_metadata(ROLE_ROOT, updater.data_buffer, file_size);
 		if (ret < 0)
 			return ret;
@@ -1202,6 +1219,7 @@ static int load_timestamp()
 			log_debug(("load_timestamp: local timestamp is not valid. Proceeding"));
 	}
 
+	/* 5.4.1 - Download the timestamp metadata file */
 	ret = download_metadata(ROLE_TIMESTAMP, updater.data_buffer, updater.data_buffer_len, 0, &file_size);
 	if (ret < 0)
 		return ret;
@@ -1215,6 +1233,8 @@ static int load_timestamp()
 			ret = TUF_SUCCESS;
 		return ret;
 	}
+
+	/* 5.4.5 - Persist timestamp metadata */
 	ret = persist_metadata(ROLE_TIMESTAMP, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
@@ -1255,12 +1275,15 @@ static int load_snapshot()
 	if (updater.timestamp.snapshot_file.length)
 		max_length = updater.timestamp.snapshot_file.length;
 
+	/* 5.5.1 - Download snapshot metadata file */
 	ret = download_metadata(ROLE_SNAPSHOT, updater.data_buffer, max_length, 0, &file_size);
 	if (ret < 0)
 		return ret;
 	ret = update_snapshot(updater.data_buffer, file_size, true);
 	if (ret < 0)
 		return ret;
+
+	/* 5.5.7 - Persist snapshot metadata */
 	ret = persist_metadata(ROLE_SNAPSHOT, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
@@ -1306,12 +1329,15 @@ static int load_targets()
 	if (updater.snapshot.targets_file.length)
 		max_length = updater.snapshot.targets_file.length;
 
+	/* 5.6.1 - Download the top-level targets metadata file */
 	ret = download_metadata(ROLE_TARGETS, updater.data_buffer, max_length, 0, &file_size);
 	if (ret < 0)
 		return ret;
 	ret = update_targets(updater.data_buffer, file_size, true);
 	if (ret < 0)
 		return ret;
+
+	/* 5.6.6 - Persist targets metadata */
 	ret = persist_metadata(ROLE_TARGETS, updater.data_buffer, file_size);
 	if (ret < 0)
 		return ret;
@@ -1336,26 +1362,35 @@ int tuf_refresh(void *application_context, time_t reference_time, unsigned char 
 	ret = tuf_updater_init(application_context, reference_time, data_buffer, data_buffer_len);
 	load_config();
 
+	/* 5.2 - Load trusted root metadata */
+	ret = load_local_root();
+	log_debug(("tuf_refresh: load_local_root trusted ret=%d", ret));
+	if (ret < 0)
+		return ret;
+
+	/* 5.3 - Update the root role*/
 	ret = load_root();
 	log_debug(("tuf_refresh: load_root ret=%d", ret));
 	if (ret < 0)
 		return ret;
+
+	/* 5.4 - Update the timestamp role*/
 	ret = load_timestamp();
 	log_debug(("tuf_refresh: load_timestamp ret=%d", ret));
 	if (ret < 0)
 		return ret;
 
+	/* 5.5 - Update the snapshot role*/
 	ret = load_snapshot();
 	log_debug(("tuf_refresh: load_snapshot ret=%d", ret));
 	if (ret < 0)
 		return ret;
 
+	/* 5.6 - Update the targets role */
 	ret = load_targets();
 	log_debug(("tuf_refresh: load_targets ret=%d", ret));
 	if (ret < 0)
 		return ret;
-
-	// tuf_targets_processing_done(updater.application_context);
 
 	return TUF_SUCCESS;
 }
