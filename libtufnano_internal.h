@@ -141,7 +141,7 @@ time_t get_current_gmt_time();
 
 size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit, const char *base_path, size_t *file_size);
 size_t write_file_posix(const char *base_name, const char *data, size_t len, const char *base_path);
-int remove_local_file_posix(const char *base_name, char *base_path);
-int remove_local_role_file(enum tuf_role role);
+int remove_local_file_posix(const char *base_name, const char *base_path);
+int remove_local_role_file(const char *local_path, enum tuf_role role);
 
 #endif

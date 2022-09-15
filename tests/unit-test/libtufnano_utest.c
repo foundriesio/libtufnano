@@ -205,7 +205,7 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 
 TEST_GROUP(Full_LibTufNAno);
 
-void *tuf_get_application_context();
+void *tuf_get_application_context(const char *local_path, const char *remote_path);
 int tuf_get_application_buffer(unsigned char **buffer, size_t *buffer_size);
 
 TEST_SETUP(Full_LibTufNAno)
@@ -215,7 +215,7 @@ TEST_SETUP(Full_LibTufNAno)
 	unsigned char* data_buffer;
 
 	tuf_get_application_buffer(&data_buffer, &data_buffer_len);
-	tuf_updater_init(tuf_get_application_context(), get_current_gmt_time(), data_buffer, data_buffer_len);
+	tuf_updater_init(tuf_get_application_context("nvs", "tests/sample_jsons/rsa"), get_current_gmt_time(), data_buffer, data_buffer_len);
 }
 
 TEST_TEAR_DOWN(Full_LibTufNAno){
@@ -517,13 +517,13 @@ TEST(Full_LibTufNAno, libTufNano_TestFullLoadRootOperation){
 }
 
 /* tests only */
-static int remove_all_local_role_files()
+static int remove_all_local_role_files(const char *path)
 {
 	// TODO: Restore original 1.root.json
-	// remove_local_role_file(ROLE_ROOT);
-	remove_local_role_file(ROLE_TIMESTAMP);
-	remove_local_role_file(ROLE_SNAPSHOT);
-	remove_local_role_file(ROLE_TARGETS);
+	// remove_local_role_file(path, ROLE_ROOT);
+	remove_local_role_file(path, ROLE_TIMESTAMP);
+	remove_local_role_file(path, ROLE_SNAPSHOT);
+	remove_local_role_file(path, ROLE_TARGETS);
 
 	return TUF_SUCCESS;
 }
@@ -534,15 +534,17 @@ TEST(Full_LibTufNAno, libTufNano_TestRefresh){
 	unsigned char* data_buffer;
 	/* on an actual implementation, get_current_gmt_time() would be used */
 	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
+	const char *local_path = "nvs";
+	const char *remote_path = "tests/sample_jsons/rsa";
 
-	remove_all_local_role_files();
+	remove_all_local_role_files(local_path);
 
 	tuf_get_application_buffer(&data_buffer, &data_buffer_len);
-	ret = tuf_refresh(tuf_get_application_context(), reference_time, data_buffer, data_buffer_len);
+	ret = tuf_refresh(tuf_get_application_context(local_path, remote_path), reference_time, data_buffer, data_buffer_len);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 
 	reference_time += 10;
-	ret = tuf_refresh(tuf_get_application_context(), reference_time, data_buffer, data_buffer_len);
+	ret = tuf_refresh(tuf_get_application_context(local_path, remote_path), reference_time, data_buffer, data_buffer_len);
 	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
 }
 

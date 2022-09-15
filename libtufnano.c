@@ -387,7 +387,7 @@ static int split_metadata(const unsigned char *data, int len, struct tuf_signatu
 
 	return 0;
 }
-
+#if 0
 /*
  * Outputs binary data as hex string.
  */
@@ -400,7 +400,7 @@ static void print_hex(const char *title, const unsigned char buf[], size_t len)
 
 	log_debug(("\r"));
 }
-
+#endif
 /*
  * Convert a hex string in a bytes array.
  */
@@ -749,7 +749,7 @@ static int parse_tuf_file_info(const char *data, size_t len, struct tuf_role_fil
 		log_error(("parse_timestamp_signed_metadata: invalid \"hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256\" length: %ld", out_value_len));
 		return TUF_ERROR_INVALID_FIELD_VALUE;
 	}
-	hex_to_bin(out_value, target->hash_sha256, TUF_HASH256_LEN);
+	hex_to_bin((const unsigned char*)out_value, target->hash_sha256, TUF_HASH256_LEN);
 
 	result = JSON_SearchConst(data, len, "length", strlen("length"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
