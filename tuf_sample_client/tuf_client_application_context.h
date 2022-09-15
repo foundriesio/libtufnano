@@ -98,6 +98,7 @@ struct aknano_context {
 };
 
 struct tuf_client_test_context {
+	char			root_provisioning_path[TUF_TEST_CLIENT_MAX_PATH_LENGTH];
 	char			remote_files_path[TUF_TEST_CLIENT_MAX_PATH_LENGTH];
 	char			local_files_path[TUF_TEST_CLIENT_MAX_PATH_LENGTH];
 

@@ -114,6 +114,10 @@ int tuf_client_read_local_file(enum tuf_role role, unsigned char *target_buffer,
 	snprintf(role_file_name, sizeof(role_file_name), "%s.json", role_name);
 
 	ret = read_file_posix(role_file_name, target_buffer, target_buffer_len, test_context->local_files_path, file_size);
+	if (ret < 0 && role == ROLE_ROOT)
+		/* If reading root role, try provisioning path as well */
+		ret = read_file_posix(role_file_name, target_buffer, target_buffer_len, test_context->root_provisioning_path, file_size);
+
 	if (ret < 0)
 		return ret;
 

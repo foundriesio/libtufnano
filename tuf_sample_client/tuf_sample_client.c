@@ -32,12 +32,15 @@ static struct tuf_client_test_context test_context;
 /*
  * Returns the application specific context information used during TUF update
  *
+ * provisioning_path: The base path for reading the provisioned root role 
+ *                    metadata file (NULL if there is no such path)
  * local_path: The base path for reading and writing the roles metadata to the
  *             local filesystem
  * remote_path: The base path for reading roles metadata when TUF is trying
  *              fetch those files from a remote server
  */
-void *tuf_get_application_context(const char *local_path, const char *remote_path)
+void *tuf_get_application_context(const char *provisioning_path,
+				  const char *local_path, const char *remote_path)
 {
 	memset(&aknano_context, 0, sizeof(aknano_context));
 	memset(&aknano_settings, 0, sizeof(aknano_settings));
@@ -47,6 +50,8 @@ void *tuf_get_application_context(const char *local_path, const char *remote_pat
 	test_context.aknano_context = &aknano_context;
 	strncpy(test_context.local_files_path, local_path, sizeof(test_context.local_files_path));
 	strncpy(test_context.remote_files_path, remote_path, sizeof(test_context.remote_files_path));
+	if (provisioning_path)
+		strncpy(test_context.root_provisioning_path, provisioning_path, sizeof(test_context.root_provisioning_path));
 
 	aknano_context.settings->hwid = "MIMXRT1170-EVK";
 	strcpy(aknano_context.settings->tag, "devel");
