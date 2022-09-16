@@ -205,15 +205,13 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 
 TEST_GROUP(Full_LibTufNAno);
 
-void *tuf_get_application_context(const char *provisioning_path,
-				  const char *local_path, const char *remote_path);
+void *tuf_get_application_context(const char *provisioning_path, const char *local_path, const char *remote_path);
 int tuf_get_application_buffer(unsigned char **buffer, size_t *buffer_size);
 
-TEST_SETUP(Full_LibTufNAno)
-{
+TEST_SETUP(Full_LibTufNAno){
 	int ret;
 	size_t data_buffer_len;
-	unsigned char* data_buffer;
+	unsigned char *data_buffer;
 
 	tuf_get_application_buffer(&data_buffer, &data_buffer_len);
 	tuf_updater_init(tuf_get_application_context(NULL, "nvs", "tests/sample_jsons/rsa"), get_current_gmt_time(), data_buffer, data_buffer_len);
@@ -237,7 +235,8 @@ TEST_GROUP_RUNNER(Full_LibTufNAno){
 	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestSnapshotLoad);
 	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestSha256);
 	// RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestFullLoadRootOperation);
-	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestRefresh);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestRefreshOK);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestRefreshErrors);
 }
 
 TEST(Full_LibTufNAno, libTufNano_TestTimestampSignature){
@@ -528,25 +527,81 @@ static int remove_all_local_role_files(const char *path)
 	return TUF_SUCCESS;
 }
 
-TEST(Full_LibTufNAno, libTufNano_TestRefresh){
+static int test_refresh_from_path(const char *remote_path, time_t reference_time) {
 	int ret;
 	size_t data_buffer_len;
-	unsigned char* data_buffer;
+	unsigned char *data_buffer;
 	/* on an actual implementation, get_current_gmt_time() would be used */
-	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
 	const char *prov_path = "provisioning";
 	const char *local_path = "nvs";
-	const char *remote_path = "tests/sample_jsons/rsa";
 
 	remove_all_local_role_files(local_path);
 
 	tuf_get_application_buffer(&data_buffer, &data_buffer_len);
 	ret = tuf_refresh(tuf_get_application_context(prov_path, local_path, remote_path), reference_time, data_buffer, data_buffer_len);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+	if (ret != TUF_SUCCESS)
+		return ret;
 
 	reference_time += 10;
 	ret = tuf_refresh(tuf_get_application_context(prov_path, local_path, remote_path), reference_time, data_buffer, data_buffer_len);
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+	return ret;
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestRefreshOK)
+{
+	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, test_refresh_from_path("tests/sample_jsons/rsa", reference_time));
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
+{
+	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
+	time_t future_reference_time = 1663351215; /* Fri, 16 Sep 2022 18:00:15 GMT */
+
+	/* Test hash errors */
+	const char *sha_paths[] = {
+		"tests/sample_jsons/error_hash_snapshot",
+		"tests/sample_jsons/error_hash_targets",
+	};
+
+	for (int i=0; i<sizeof(sha_paths) / sizeof(sha_paths[0]); i++) {
+		log_info(("\nTesting '%s'...", sha_paths[i]));
+		TEST_ASSERT_EQUAL(TUF_ERROR_HASH_VERIFY_ERROR, test_refresh_from_path(sha_paths[i], reference_time));
+	}
+
+	/* Test signature errors (hashes are OK) */
+	const char *sig_paths[] = {
+		"tests/sample_jsons/error_sig_root_2",
+		"tests/sample_jsons/error_sig_root_2_self",
+		"tests/sample_jsons/error_sig_timestamp",
+		"tests/sample_jsons/error_sig_snapshot",
+		"tests/sample_jsons/error_sig_targets",
+	};
+
+	for (int i=0; i<sizeof(sig_paths) / sizeof(sig_paths[0]); i++) {
+		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, sig_paths[i]));
+		TEST_ASSERT_EQUAL(TUF_ERROR_UNSIGNED_METADATA, test_refresh_from_path(sig_paths[i], reference_time));
+	}
+
+	/* Test version errors */
+	const char *version_paths[] = {
+		"tests/sample_jsons/error_version_root_2",
+	};
+
+	for (int i=0; i<sizeof(version_paths) / sizeof(version_paths[0]); i++) {
+		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, version_paths[i]));
+		TEST_ASSERT_EQUAL(TUF_ERROR_BAD_VERSION_NUMBER, test_refresh_from_path(version_paths[i], reference_time));
+	}
+
+	/* Test expiration errors */
+	const char *ok_paths[] = {
+		"tests/sample_jsons/rsa",
+	};
+
+	for (int i=0; i<sizeof(ok_paths) / sizeof(ok_paths[0]); i++) {
+		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, ok_paths[i]));
+		TEST_ASSERT_EQUAL(TUF_ERROR_EXPIRED_METADATA, test_refresh_from_path(ok_paths[i], future_reference_time));
+	}
 }
 
 int run_full_test(void)
