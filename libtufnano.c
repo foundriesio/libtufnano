@@ -714,6 +714,16 @@ static int update_root(const unsigned char *data, size_t len, bool verify)
 	if (ret < 0)
 		return ret;
 
+
+  /**
+   * The step #5 in https://github.com/theupdateframework/specification/blob/master/tuf-spec.md#update-the-root-role--update-root says:
+
+    ```
+    In case they are equal, again discard the new root metadata, but proceed the update cycle with the already trusted root metadata.
+    ```
+    
+    So, if a current root meta and the new one has the same version, we should proceed with the update.
+   * */
 	if (verify && new_root.base.version != updater.root.base.version + 1) {
 		/* 5.3.5 - Check for a rollback attack */
 		log_error(("Expected root version %d instead got version %d", updater.root.base.version + 1, new_root.base.version));
@@ -846,6 +856,11 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 		}
 		/* Keep using old timestamp if versions are equal */
 		if (new_timestamp.base.version == updater.timestamp.base.version)
+      // We should actualy update the timestamp role meta even if the current and new versions are the same.
+      // This is actually a real-life use-case, when a device switches from one tag to another.
+      // In this case, timestamp, snapshot and targets are the same (before and after tag switch) but their content is different,
+      // therefore we need to update the `updater.timestamp` in this case.
+      // aktualizr compares the timestamps' signatures  to determine whether the local timestamp needs to be updated in such case to avoid local version re-wrting if they are really the same.      
 			return TUF_SAME_VERSION;
 
 		/* 5.4.3.1 - Prevent rolling back snapshot version */
