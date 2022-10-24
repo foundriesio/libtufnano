@@ -844,8 +844,10 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 			return TUF_ERROR_BAD_VERSION_NUMBER;
 		}
 		/* Keep using old timestamp if versions are equal */
-		if (new_timestamp.base.version == updater.timestamp.base.version)
-			return TUF_SAME_VERSION;
+		if (new_timestamp.base.version == updater.timestamp.base.version) {
+			if (!memcmp(new_timestamp.snapshot_file.hash_sha256, updater.timestamp.snapshot_file.hash_sha256, sizeof(new_timestamp.snapshot_file.hash_sha256)))
+				return TUF_SAME_VERSION;
+		}
 
 		/* 5.4.3.1 - Prevent rolling back snapshot version */
 		if (new_timestamp.snapshot_file.version < updater.timestamp.snapshot_file.version) {
