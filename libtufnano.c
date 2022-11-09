@@ -18,6 +18,7 @@
 #include "core_json.h"
 
 #include "libtufnano.h"
+#include "libtufnano_config.h"
 #include "libtufnano_internal.h"
 
 struct tuf_updater updater;

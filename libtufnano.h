@@ -5,8 +5,6 @@
 #include <stdint.h>
 #include <time.h>
 
-#include "libtufnano_config.h"
-
 /*
  * TUF metadata has '.' in field names.
  * We change the key separator for coreJSON to '/' to avoid ambiguity

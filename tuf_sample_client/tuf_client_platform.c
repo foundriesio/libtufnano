@@ -7,6 +7,7 @@
 #include <time.h>
 
 #include "libtufnano_internal.h"
+#include "libtufnano_config.h"
 #include "libtufnano.h"
 #include "tuf_client_application_context.h"
 
