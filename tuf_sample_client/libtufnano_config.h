@@ -1,3 +1,10 @@
+/*
+ * Copyright 2022 Foundries.io
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
 #ifndef __LIBTUFNANO_CONFIG_H__
 #define __LIBTUFNANO_CONFIG_H__
 

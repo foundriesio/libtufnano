@@ -1,3 +1,10 @@
+/*
+ * Copyright 2022 Foundries.io
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
 #ifndef __TUF_CLIENT_APPLICATION_CONTEXT_H__
 #define __TUF_CLIENT_APPLICATION_CONTEXT_H__
 

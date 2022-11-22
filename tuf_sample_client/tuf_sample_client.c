@@ -1,4 +1,11 @@
 /*
+ * Copyright 2022 Foundries.io
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
+/*
  * Sample TUF client. The code from this file will be part of aktalizr-nano
  * It still has some code from the original PoC code, separation between app
  *  and aktalizr-nano is ongoing
