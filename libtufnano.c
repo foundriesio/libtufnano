@@ -28,6 +28,10 @@
 #include "libtufnano_config.h"
 #include "libtufnano_internal.h"
 
+#ifdef TUF_ENABLE_ED25519
+#include "curve25519.h"
+#endif
+
 struct tuf_updater updater;
 static struct tuf_config config;
 
@@ -362,8 +366,12 @@ static int split_metadata(const unsigned char *data, int len, struct tuf_signatu
 			return TUF_ERROR_FIELD_MISSING;
 		}
 
-		/* only rsassa-pss-sha256 is supported for now */
-		if (strncmp(out_value_internal, "rsassa-pss-sha256", value_length_internal) != 0) {
+		/* only rsassa-pss-sha256 and ed25519 are supported for now */
+		if (strncasecmp(out_value_internal, "rsassa-pss-sha256", value_length_internal) != 0
+#ifdef TUF_ENABLE_ED25519
+		    && strncasecmp(out_value_internal, "ed25519", value_length_internal) != 0
+#endif
+		    ) {
 			log_error(("unsupported signature method \"%.*s\". Skipping", (int)value_length_internal, out_value_internal));
 			continue;
 		}
@@ -461,9 +469,9 @@ static int verify_data_hash_sha256(const unsigned char *data, int data_len, unsi
  * Calculates the signature of the input data, using the public key passed as
  * parameter, and compares it to the expected signature.
  *
- * rsassa-pss-sha256 mode only.
+ * rsassa-pss-sha256 and ed25519 modes only.
  */
-static int verify_signature(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
+static int verify_signature_rsa(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
 {
 	int ret;
 	int exit_code = -1;
@@ -471,14 +479,18 @@ static int verify_signature(const unsigned char *data, int data_len, unsigned ch
 	unsigned char hash[TUF_HASH256_LEN];
 	const char *key_pem = (const char *)key->keyval;
 	char cleaned_up_key_b64[TUF_KEY_VAL_MAX_LEN];
+	int keylen;
 
 	mbedtls_pk_init(&pk);
 
 	memset(cleaned_up_key_b64, 0, sizeof(cleaned_up_key_b64));
+
+	/* RSA */
 	strncpy(cleaned_up_key_b64, key_pem, TUF_KEY_VAL_MAX_LEN);
 	replace_escape_chars_from_b64_string((unsigned char *)cleaned_up_key_b64);
+	keylen = strlen(cleaned_up_key_b64) + 1;
 
-	if ((ret = mbedtls_pk_parse_public_key(&pk, (const unsigned char *)cleaned_up_key_b64, strlen(cleaned_up_key_b64) + 1)) != 0) {
+	if ((ret = mbedtls_pk_parse_public_key(&pk, (const unsigned char *)cleaned_up_key_b64, keylen)) != 0) {
 		log_error(("verify_signature: failed. Could not read key. mbedtls_pk_parse_public_keyfile returned 0x%04X", -ret));
 		log_error(("key: %s", cleaned_up_key_b64));
 		goto exit;
@@ -525,6 +537,48 @@ exit:
 	mbedtls_pk_free(&pk);
 
 	return exit_code;
+}
+
+#ifdef TUF_ENABLE_ED25519
+int ED25519_verify(const uint8_t *message, size_t message_len, const uint8_t signature[64], const uint8_t public_key[32]);
+
+static int verify_signature_ed25519(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
+{
+	char public_key[33];
+	size_t key_len = strnlen(key->keyval, sizeof(key->keyval));
+
+	if (key_len != 64) {
+		log_error(("Incorrect key length for ed25519: %d", key_len));
+		return TUF_ERROR_UNSIGNED_METADATA;
+	}
+
+	unsigned char hash_output[TUF_HASH256_LEN]; /* SHA-256 outputs 32 bytes */
+
+	/* 0 here means use the full SHA-256, not the SHA-224 variant */
+	mbedtls_sha256(data, data_len, hash_output, 0);
+
+	/* EC */
+	hex_to_bin(key->keyval, public_key, 32);
+	public_key[32] = 0;
+	// int ret = ED25519_verify(hash_output, TUF_HASH256_LEN, signature_bytes, public_key);
+	int ret = ED25519_verify(data, data_len, signature_bytes, public_key);
+
+	if (ret == 0) {
+		log_error(("Invalid signature"));
+		return TUF_ERROR_UNSIGNED_METADATA;
+	}
+	return TUF_SUCCESS;
+}
+#endif
+
+static int verify_signature(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
+{
+#ifdef TUF_ENABLE_ED25519
+	if (!strncasecmp("ed25519", key->keytype, sizeof(key->keytype)))
+		return verify_signature_ed25519(data, data_len, signature_bytes, signature_bytes_len, key);
+	else
+#endif
+	return verify_signature_rsa(data, data_len, signature_bytes, signature_bytes_len, key);
 }
 
 /*
@@ -757,7 +811,7 @@ static int parse_tuf_file_info(const char *data, size_t len, struct tuf_role_fil
 		log_error(("parse_timestamp_signed_metadata: invalid \"hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256\" length: %ld", out_value_len));
 		return TUF_ERROR_INVALID_FIELD_VALUE;
 	}
-	hex_to_bin((const unsigned char*)out_value, target->hash_sha256, TUF_HASH256_LEN);
+	hex_to_bin((const unsigned char *)out_value, target->hash_sha256, TUF_HASH256_LEN);
 
 	result = JSON_SearchConst(data, len, "length", strlen("length"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
@@ -852,10 +906,9 @@ static int update_timestamp(const unsigned char *data, size_t len, bool check_si
 			return TUF_ERROR_BAD_VERSION_NUMBER;
 		}
 		/* Keep using old timestamp if versions are equal */
-		if (new_timestamp.base.version == updater.timestamp.base.version) {
+		if (new_timestamp.base.version == updater.timestamp.base.version)
 			if (!memcmp(new_timestamp.snapshot_file.hash_sha256, updater.timestamp.snapshot_file.hash_sha256, sizeof(new_timestamp.snapshot_file.hash_sha256)))
 				return TUF_SAME_VERSION;
-		}
 
 		/* 5.4.3.1 - Prevent rolling back snapshot version */
 		if (new_timestamp.snapshot_file.version < updater.timestamp.snapshot_file.version) {
