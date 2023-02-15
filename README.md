@@ -18,7 +18,7 @@ Limitations
 - Metadata must be provided by the TUF server as JSON files, and the "signed" 
 section must be formatted as canonical JSON
 - Only sha256 hashes are supported for now
-- Only rsassa-pss-sha256 signatures are supported for now
+- Only rsassa-pss-sha256 and ed25519 signatures are supported for now
 - No "delegated roles" support
 - No "consistent snapshot" mode support
 
