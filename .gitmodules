@@ -1,0 +1,9 @@
+[submodule "tests/unit-test/Unity"]
+	path = tests/unit-test/Unity
+	url = https://github.com/ThrowTheSwitch/Unity.git
+[submodule "tests/unit-test/mbedtls"]
+	path = tests/unit-test/mbedtls
+	url = https://github.com/Mbed-TLS/mbedtls.git
+[submodule "tests/unit-test/coreJSON"]
+	path = tests/unit-test/coreJSON
+	url = https://github.com/FreeRTOS/coreJSON.git
