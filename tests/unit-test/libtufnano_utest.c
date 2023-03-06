@@ -23,10 +23,10 @@
 #include "unity_fixture.h"
 
 #include "libtufnano.h"
-#include "libtufnano.c"
 #include "libtufnano_internal.h"
+#include "libtufnano_config.h"
 
-#define TUF_TEST_FILES_PATH "tests/sample_jsons/rsa"
+#define TUF_TEST_FILES_PATH "../sample_jsons"
 
 extern struct tuf_updater updater;
 
@@ -171,12 +171,12 @@ int verify_file_signature(const char *file_base_name, const char *signing_key_fi
 	size_t file_size, key_file_size;
 	int ret;
 
-	ret = read_file_posix(file_base_name, updater.data_buffer, updater.data_buffer_len, TUF_TEST_FILES_PATH, &file_size);
+	ret = read_file_posix(file_base_name, updater.data_buffer, updater.data_buffer_len, TUF_TEST_FILES_PATH "/rsa", &file_size);
 	if (ret < 0)
 		return -1;
 
 
-	ret = read_file_posix(signing_key_file, signing_public_key_b64, sizeof(signing_public_key_b64), TUF_TEST_FILES_PATH, &key_file_size);
+	ret = read_file_posix(signing_key_file, signing_public_key_b64, sizeof(signing_public_key_b64), TUF_TEST_FILES_PATH "/rsa", &key_file_size);
 	if (ret < 0)
 		return -20;
 
@@ -191,11 +191,11 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 	size_t file_size, hash_file_size;
 	int ret;
 
-	ret = read_file_posix(file_base_name, updater.data_buffer, updater.data_buffer_len, TUF_TEST_FILES_PATH, &file_size);
+	ret = read_file_posix(file_base_name, updater.data_buffer, updater.data_buffer_len, TUF_TEST_FILES_PATH "/rsa", &file_size);
 	if (ret < 0)
 		return -1;
 
-	ret = read_file_posix(sha256_file, hash256_b16, sizeof(hash256_b16), TUF_TEST_FILES_PATH, &hash_file_size);
+	ret = read_file_posix(sha256_file, hash256_b16, sizeof(hash256_b16), TUF_TEST_FILES_PATH "/rsa", &hash_file_size);
 	if (ret < 0)
 		return -30;
 
@@ -221,7 +221,7 @@ TEST_SETUP(Full_LibTufNAno){
 	unsigned char *data_buffer;
 
 	tuf_get_application_buffer(&data_buffer, &data_buffer_len);
-	tuf_updater_init(tuf_get_application_context(NULL, "nvs", "tests/sample_jsons/rsa"), get_current_gmt_time(), data_buffer, data_buffer_len);
+	tuf_updater_init(tuf_get_application_context(NULL, "../nvs", TUF_TEST_FILES_PATH "/rsa"), get_current_gmt_time(), data_buffer, data_buffer_len);
 }
 
 TEST_TEAR_DOWN(Full_LibTufNAno){
@@ -539,8 +539,8 @@ static int test_refresh_from_path(const char *remote_path, time_t reference_time
 	size_t data_buffer_len;
 	unsigned char *data_buffer;
 	/* on an actual implementation, get_current_gmt_time() would be used */
-	const char *prov_path = "provisioning";
-	const char *local_path = "nvs";
+	const char *prov_path = "../provisioning";
+	const char *local_path = "../nvs";
 
 	remove_all_local_role_files(local_path);
 
@@ -557,7 +557,7 @@ static int test_refresh_from_path(const char *remote_path, time_t reference_time
 TEST(Full_LibTufNAno, libTufNano_TestRefreshOK)
 {
 	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, test_refresh_from_path("tests/sample_jsons/rsa", reference_time));
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, test_refresh_from_path(TUF_TEST_FILES_PATH "/rsa", reference_time));
 }
 
 TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
@@ -567,8 +567,8 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	/* Test hash errors */
 	const char *sha_paths[] = {
-		"tests/sample_jsons/error_hash_snapshot",
-		"tests/sample_jsons/error_hash_targets",
+		TUF_TEST_FILES_PATH "/error_hash_snapshot",
+		TUF_TEST_FILES_PATH "/error_hash_targets",
 	};
 
 	for (int i=0; i<sizeof(sha_paths) / sizeof(sha_paths[0]); i++) {
@@ -578,11 +578,11 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	/* Test signature errors (hashes are OK) */
 	const char *sig_paths[] = {
-		"tests/sample_jsons/error_sig_root_2",
-		"tests/sample_jsons/error_sig_root_2_self",
-		"tests/sample_jsons/error_sig_timestamp",
-		"tests/sample_jsons/error_sig_snapshot",
-		"tests/sample_jsons/error_sig_targets",
+		TUF_TEST_FILES_PATH "/error_sig_root_2",
+		TUF_TEST_FILES_PATH "/error_sig_root_2_self",
+		TUF_TEST_FILES_PATH "/error_sig_timestamp",
+		TUF_TEST_FILES_PATH "/error_sig_snapshot",
+		TUF_TEST_FILES_PATH "/error_sig_targets",
 	};
 
 	for (int i=0; i<sizeof(sig_paths) / sizeof(sig_paths[0]); i++) {
@@ -592,7 +592,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	/* Test version errors */
 	const char *version_paths[] = {
-		"tests/sample_jsons/error_version_root_2",
+		TUF_TEST_FILES_PATH "/error_version_root_2",
 	};
 
 	for (int i=0; i<sizeof(version_paths) / sizeof(version_paths[0]); i++) {
@@ -602,7 +602,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	/* Test expiration errors */
 	const char *ok_paths[] = {
-		"tests/sample_jsons/rsa",
+		TUF_TEST_FILES_PATH "/rsa",
 	};
 
 	for (int i=0; i<sizeof(ok_paths) / sizeof(ok_paths[0]); i++) {
@@ -623,8 +623,31 @@ int run_full_test(void)
 	return status;
 }
 
-int main()
-{
+void test_TUF_all( void ) {
 	log_debug(("get_current_gmt_time=%ld\n", get_current_gmt_time()));
 	run_full_test();
+}
+/* ============================   UNITY FIXTURES ============================ */
+/* Keep the block bellow to avoid a new setUp and tearDown to be added automatically */
+#if 0
+/* Called before each test method. */
+void setUp()
+{
+}
+
+/* Called after each test method. */
+void tearDown()
+{
+}
+#endif
+
+/* Called at the beginning of the whole suite. */
+void suiteSetUp()
+{
+}
+
+/* Called at the end of the whole suite. */
+int suiteTearDown( int numFailures )
+{
+    return numFailures;
 }
