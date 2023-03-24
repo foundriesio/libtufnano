@@ -27,7 +27,7 @@ section must be formatted as canonical JSON
 - No `consistent snapshot` mode support
 
 
-Building and running build-in tests
+Building and running built-in tests
 -----------------------------------
 Inside the cloned directory:
 ```
