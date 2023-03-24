@@ -1,3 +1,6 @@
+# Unit test build directory
+tests/build/*
+
 ## CMake
 CMakeLists.txt.user
 CMakeCache.txt
