@@ -311,7 +311,7 @@ static int parse_root_signed_metadata(const char *data, int len, struct tuf_root
  *
  * The input data is not changed.
  */
-static int split_metadata(const unsigned char *data, int len, struct tuf_signature *signatures, int signatures_max_count, const unsigned char **signed_value, int *signed_value_len)
+static int split_metadata(const unsigned char *data, size_t len, struct tuf_signature *signatures, int signatures_max_count, const unsigned char **signed_value, int *signed_value_len)
 {
 	JSONStatus_t result;
 	JSONStatus_t result_internal;
@@ -420,7 +420,7 @@ static void print_hex(const char *title, const unsigned char buf[], size_t len)
 /*
  * Convert a hex string in a bytes array.
  */
-static int hex_to_bin(const unsigned char *s, unsigned char *dst, size_t len)
+static int hex_to_bin(const char *s, uint8_t *dst, size_t len)
 {
 	size_t i, j, k;
 
@@ -433,7 +433,7 @@ static int hex_to_bin(const unsigned char *s, unsigned char *dst, size_t len)
 
 		k = ((i & 1) != 0) ? j : j << 4;
 
-		dst[i >> 1] = (unsigned char)(dst[i >> 1] | k);
+		dst[i >> 1] = (uint8_t)(dst[i >> 1] | k);
 	}
 
 	return 0;
@@ -542,9 +542,9 @@ exit:
 #ifdef TUF_ENABLE_ED25519
 int ED25519_verify(const uint8_t *message, size_t message_len, const uint8_t signature[64], const uint8_t public_key[32]);
 
-static int verify_signature_ed25519(const unsigned char *data, int data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
+static int verify_signature_ed25519(const unsigned char *data, size_t data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
 {
-	char public_key[33];
+	uint8_t public_key[33];
 	size_t key_len = strnlen(key->keyval, sizeof(key->keyval));
 
 	if (key_len != 64) {
@@ -811,14 +811,14 @@ static int parse_tuf_file_info(const char *data, size_t len, struct tuf_role_fil
 		log_error(("parse_timestamp_signed_metadata: invalid \"hashes" TUF_JSON_QUERY_KEY_SEPARATOR "sha256\" length: %ld", out_value_len));
 		return TUF_ERROR_INVALID_FIELD_VALUE;
 	}
-	hex_to_bin((const unsigned char *)out_value, target->hash_sha256, TUF_HASH256_LEN);
+	hex_to_bin(out_value, target->hash_sha256, TUF_HASH256_LEN);
 
 	result = JSON_SearchConst(data, len, "length", strlen("length"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
 		log_error(("parse_timestamp_signed_metadata: \"length\" not found"));
 		return TUF_ERROR_FIELD_MISSING;
 	}
-	sscanf(out_value, "%ld", &target->length);
+	sscanf(out_value, "%zu", &target->length);
 
 	result = JSON_SearchConst(data, len, "version", strlen("version"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
