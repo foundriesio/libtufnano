@@ -18,7 +18,7 @@ endif()
 # Set global path variables.
 get_filename_component(__MODULE_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set( MODULE_ROOT_DIR ${__MODULE_ROOT_DIR} CACHE INTERNAL "libtufnano source root." )
-set( UNIT_TEST_DIR ${MODULE_ROOT_DIR}/tests/unit-test CACHE INTERNAL "libtufnano unit test directory." )
+set( UNIT_TEST_DIR ${MODULE_ROOT_DIR}/test/unit-test CACHE INTERNAL "libtufnano unit test directory." )
 set( UNITY_DIR ${UNIT_TEST_DIR}/Unity CACHE INTERNAL "Unity library source directory." )
 set( MBEDTLS_DIR ${UNIT_TEST_DIR}/mbedtls CACHE INTERNAL "MbedTLS library source directory." )
 set( CORE_JSON_DIR ${UNIT_TEST_DIR}/coreJSON CACHE INTERNAL "CoreJSON library source directory." )
