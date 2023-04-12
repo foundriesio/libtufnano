@@ -23,10 +23,10 @@
  */
 
 /* Where to store non volatile data for TUF metadata */
-#define TUF_LOCAL_FILES_PATH "../nvs"
+#define TUF_LOCAL_FILES_PATH "../test/nvs"
 
 /* Emulate files download */
-#define TUF_REMOTE_FILES_PATH "../sample_jsons/rsa"
+#define TUF_REMOTE_FILES_PATH "../test/sample_jsons/rsa"
 
 #define MAX_FILE_PATH_LEN 150
 

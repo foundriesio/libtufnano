@@ -33,8 +33,7 @@ Inside the cloned directory:
 ```
 git submodule init
 git submodule update
-cd tests
-cmake -B build
+cmake -S test -B build
 cd build
 make
 make test

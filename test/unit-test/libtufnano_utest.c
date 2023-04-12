@@ -26,7 +26,7 @@
 #include "libtufnano_internal.h"
 #include "libtufnano_config.h"
 
-#define TUF_TEST_FILES_PATH "../sample_jsons"
+#define TUF_TEST_FILES_PATH "../test/sample_jsons"
 
 extern struct tuf_updater updater;
 
@@ -221,7 +221,7 @@ TEST_SETUP(Full_LibTufNAno){
 	unsigned char *data_buffer;
 
 	tuf_get_application_buffer(&data_buffer, &data_buffer_len);
-	tuf_updater_init(tuf_get_application_context(NULL, "../nvs", TUF_TEST_FILES_PATH "/rsa"), get_current_gmt_time(), data_buffer, data_buffer_len);
+	tuf_updater_init(tuf_get_application_context(NULL, "../test/nvs", TUF_TEST_FILES_PATH "/rsa"), get_current_gmt_time(), data_buffer, data_buffer_len);
 }
 
 TEST_TEAR_DOWN(Full_LibTufNAno){
@@ -539,8 +539,8 @@ static int test_refresh_from_path(const char *remote_path, time_t reference_time
 	size_t data_buffer_len;
 	unsigned char *data_buffer;
 	/* on an actual implementation, get_current_gmt_time() would be used */
-	const char *prov_path = "../provisioning";
-	const char *local_path = "../nvs";
+	const char *prov_path = "../test/provisioning";
+	const char *local_path = "../test/nvs";
 
 	remove_all_local_role_files(local_path);
 
