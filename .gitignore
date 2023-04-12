@@ -1,5 +1,6 @@
 # Unit test build directory
-tests/build/*
+build/*
+test/nvs/*
 
 ## CMake
 CMakeLists.txt.user
