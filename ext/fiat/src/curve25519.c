@@ -1097,6 +1097,9 @@ int ED25519_verify(const uint8_t *message, size_t message_len,
 
 #if defined(MCUBOOT_USE_MBED_TLS)
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+
   mbedtls_sha512_context ctx;
   int ret;
 
@@ -1116,6 +1119,8 @@ int ED25519_verify(const uint8_t *message, size_t message_len,
   ret = mbedtls_sha512_finish_ret(&ctx, h);
   assert(ret == 0);
   mbedtls_sha512_free(&ctx);
+
+#pragma GCC diagnostic pop
 
 #else
 

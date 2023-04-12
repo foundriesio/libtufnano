@@ -34,11 +34,7 @@ set( CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin )
 set( CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib )
 set( CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib )
 
-add_compile_definitions(TUF_ENABLE_ED25519)
-
 # ================================ Coverity Analysis Configuration =================================
-
-add_compile_definitions(TUF_JSON_QUERY_KEY_SEPARATOR='/')
 
 # Include filepaths for source and include.
 include( ${MODULE_ROOT_DIR}/tufFilePaths.cmake )
@@ -62,7 +58,7 @@ target_include_directories( coverity_analysis PUBLIC ${TUF_INCLUDE_PUBLIC_DIRS} 
 # When building the coverity analysis target we disable debug
 target_compile_options(coverity_analysis PUBLIC -DNDEBUG )
 
-target_compile_options(coverity_analysis PUBLIC -DTUF_JSON_QUERY_KEY_SEPARATOR='/')
+target_compile_options(coverity_analysis PUBLIC)
 
 #  ====================================  Test Configuration ========================================
 
