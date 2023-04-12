@@ -25,7 +25,6 @@
 #include "core_json.h"
 
 #include "libtufnano.h"
-#include "libtufnano_config.h"
 #include "libtufnano_internal.h"
 
 #ifdef TUF_ENABLE_ED25519
@@ -159,7 +158,7 @@ static int parse_base_metadata(const char *data, int len, enum tuf_role role, st
 	size_t out_value_len;
 	JSONStatus_t result;
 	int ret;
-	char lower_case_type[12];
+	char lower_case_type[12] = { 0 };
 
 	/* Please validate before */
 	result = JSON_SearchConst(data, len, "_type", strlen("_type"), &out_value, &out_value_len, NULL);
@@ -168,7 +167,7 @@ static int parse_base_metadata(const char *data, int len, enum tuf_role role, st
 		return TUF_ERROR_INVALID_TYPE;
 	}
 
-	strncpy(lower_case_type, out_value, sizeof(lower_case_type));
+	strncpy(lower_case_type, out_value, sizeof(lower_case_type)-1);
 	lower_case_type[0] = tolower(lower_case_type[0]); /* Allowing first char to be upper case */
 	if (strncmp(lower_case_type, tuf_get_role_name(role), out_value_len)) {
 		log_error(("parse_root_signed_metadata: Expected \"_type\" = %s, got %.*s instead", tuf_get_role_name(role), (int)out_value_len, out_value));
@@ -544,6 +543,8 @@ int ED25519_verify(const uint8_t *message, size_t message_len, const uint8_t sig
 
 static int verify_signature_ed25519(const unsigned char *data, size_t data_len, unsigned char *signature_bytes, int signature_bytes_len, struct tuf_key *key)
 {
+	(void) signature_bytes_len;
+
 	uint8_t public_key[33];
 	size_t key_len = strnlen(key->keyval, sizeof(key->keyval));
 
@@ -756,7 +757,7 @@ static int split_metadata_and_check_signature(const unsigned char *data, size_t 
  * Load the Root role metadata, validating it (if verify=true),
  * and loading the resulting information into updater struct.
  */
-static int update_root(const unsigned char *data, size_t len, bool verify)
+static int update_root(const char *data, size_t len, bool verify)
 {
 	int ret;
 	const unsigned char *signed_value;
@@ -766,12 +767,12 @@ static int update_root(const unsigned char *data, size_t len, bool verify)
 
 	memset(&new_root, 0, sizeof(new_root));
 	/* 5.3.4 - Check for an arbitrary software attack (verify=true) only) */
-	ret = split_metadata_and_check_signature(data, len, ROLE_ROOT, signatures, &signed_value, &signed_value_len, verify);
+	ret = split_metadata_and_check_signature((const unsigned char*)data, len, ROLE_ROOT, signatures, &signed_value, &signed_value_len, verify);
 	if (ret != 0)
 		return ret;
 
 	// Parsing ROOT
-	ret = parse_root_signed_metadata((const char *)signed_value, signed_value_len, &new_root);
+	ret = parse_root_signed_metadata((const char*)signed_value, signed_value_len, &new_root);
 	if (ret < 0)
 		return ret;
 
@@ -1229,7 +1230,7 @@ static int load_local_root()
 		return ret;
 	}
 
-	ret = update_root(updater.data_buffer, file_size, false);
+	ret = update_root((char*)updater.data_buffer, file_size, false);
 	if (ret < 0)
 		return ret;
 
@@ -1255,7 +1256,7 @@ static int load_root()
 			else
 				return ret;
 		}
-		ret = update_root(updater.data_buffer, file_size, true);
+		ret = update_root((char*)updater.data_buffer, file_size, true);
 		if (ret < 0)
 			return ret;
 

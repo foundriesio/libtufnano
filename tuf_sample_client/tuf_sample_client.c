@@ -55,10 +55,10 @@ void *tuf_get_application_context(const char *provisioning_path,
 
 	aknano_context.settings = &aknano_settings;
 	test_context.aknano_context = &aknano_context;
-	strncpy(test_context.local_files_path, local_path, sizeof(test_context.local_files_path));
-	strncpy(test_context.remote_files_path, remote_path, sizeof(test_context.remote_files_path));
+	strncpy(test_context.local_files_path, local_path, sizeof(test_context.local_files_path)-1);
+	strncpy(test_context.remote_files_path, remote_path, sizeof(test_context.remote_files_path)-1);
 	if (provisioning_path)
-		strncpy(test_context.root_provisioning_path, provisioning_path, sizeof(test_context.root_provisioning_path));
+		strncpy(test_context.root_provisioning_path, provisioning_path, sizeof(test_context.root_provisioning_path)-1);
 
 	aknano_context.settings->hwid = "MIMXRT1170-EVK";
 	strcpy(aknano_context.settings->tag, "devel");

@@ -77,6 +77,9 @@ typedef struct {
 typedef unsigned char fiat_25519_uint1;
 typedef signed char fiat_25519_int1;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 /*
  * Input Bounds:
  *   arg1: [0x0 ~> 0x1]
@@ -882,3 +885,4 @@ static void fiat_25519_from_bytes(uint32_t out1[10], const uint8_t arg1[32]) {
   out1[9] = x67;
 }
 
+#pragma GCC diagnostic pop

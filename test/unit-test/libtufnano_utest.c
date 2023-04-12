@@ -25,13 +25,14 @@
 #include "libtufnano.h"
 #include "libtufnano_internal.h"
 #include "libtufnano_config.h"
+#include "libtufnano_annex.h"
 
 #define TUF_TEST_FILES_PATH "../test/sample_jsons"
 
 extern struct tuf_updater updater;
 
 /* tests only */
-int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, const unsigned char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
+int fetch_role_and_check_signature(const char *file_base_name, enum tuf_role role, struct tuf_signature *signatures, const unsigned char **signed_value, int *signed_value_len, bool check_signature_and_hashes)
 {
 	int ret = -1;
 	size_t file_size;
@@ -48,10 +49,9 @@ int fetch_role_and_check_signature(const unsigned char *file_base_name, enum tuf
 
 
 /* tests only */
-int parse_root(const unsigned char *file_base_name, bool check_signature)
+int parse_root(const char *file_base_name, bool check_signature)
 {
 	int ret = -1;
-	int signature_index;
 	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
@@ -63,7 +63,7 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 	if (ret != 0)
 		return ret;
 
-	ret = parse_root_signed_metadata(signed_value, signed_value_len, &new_root);
+	ret = parse_root_signed_metadata((const char*)signed_value, signed_value_len, &new_root);
 	if (ret < 0)
 		return ret;
 
@@ -82,10 +82,9 @@ int parse_root(const unsigned char *file_base_name, bool check_signature)
 
 
 /* tests only */
-int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
+int parse_timestamp(const char *file_base_name, bool check_signature)
 {
 	int ret = -1;
-	int signature_index;
 	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
@@ -98,7 +97,7 @@ int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 		return ret;
 
 	// Parsing Timestamp
-	ret = parse_timestamp_signed_metadata(signed_value, signed_value_len, &new_timestamp);
+	ret = parse_timestamp_signed_metadata((const char*)signed_value, signed_value_len, &new_timestamp);
 	if (ret < 0)
 		return ret;
 
@@ -107,10 +106,9 @@ int parse_timestamp(const unsigned char *file_base_name, bool check_signature)
 }
 
 /* tests only */
-int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
+int parse_snapshot(const char *file_base_name, bool check_signature)
 {
 	int ret = -1;
-	int signature_index;
 	const unsigned char *signed_value;
 	int signed_value_len;
 	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
@@ -125,7 +123,7 @@ int parse_snapshot(const unsigned char *file_base_name, bool check_signature)
 	if (ret != 0)
 		return ret;
 
-	ret = parse_snapshot_signed_metadata(signed_value, signed_value_len, &new_snapshot);
+	ret = parse_snapshot_signed_metadata((const char*)signed_value, signed_value_len, &new_snapshot);
 	if (ret < 0)
 		return ret;
 
@@ -180,7 +178,7 @@ int verify_file_signature(const char *file_base_name, const char *signing_key_fi
 	if (ret < 0)
 		return -20;
 
-	return verify_data_signature(updater.data_buffer, file_size, signing_public_key_b64, key_file_size);
+	return verify_data_signature(updater.data_buffer, file_size, (const char*)signing_public_key_b64, key_file_size);
 }
 
 /* for unit tests only */
@@ -199,7 +197,7 @@ int verify_file_hash(const char *file_base_name, const char *sha256_file)
 	if (ret < 0)
 		return -30;
 
-	hex_to_bin(hash256_b16, hash256, TUF_HASH256_LEN);
+	hex_to_bin((const char*)hash256_b16, hash256, TUF_HASH256_LEN);
 	log_debug(("Verifying hash for %s\n", file_base_name));
 	return verify_data_hash_sha256(updater.data_buffer, file_size, hash256, TUF_HASH256_LEN);
 }
@@ -216,7 +214,6 @@ void *tuf_get_application_context(const char *provisioning_path, const char *loc
 int tuf_get_application_buffer(unsigned char **buffer, size_t *buffer_size);
 
 TEST_SETUP(Full_LibTufNAno){
-	int ret;
 	size_t data_buffer_len;
 	unsigned char *data_buffer;
 
@@ -516,12 +513,12 @@ TEST(Full_LibTufNAno, libTufNano_TestSha256){
 	TEST_ASSERT_EQUAL(TUF_ERROR_HASH_VERIFY_ERROR, ret);
 }
 
-TEST(Full_LibTufNAno, libTufNano_TestFullLoadRootOperation){
-	int ret;
+// TEST(Full_LibTufNAno, libTufNano_TestFullLoadRootOperation){
+	// int ret;
 
 	// ret = load_root();
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
-}
+	// TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+// }
 
 /* tests only */
 static int remove_all_local_role_files(const char *path)
@@ -571,7 +568,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 		TUF_TEST_FILES_PATH "/error_hash_targets",
 	};
 
-	for (int i=0; i<sizeof(sha_paths) / sizeof(sha_paths[0]); i++) {
+	for (size_t i=0; i<sizeof(sha_paths) / sizeof(sha_paths[0]); i++) {
 		log_info(("\nTesting '%s'...", sha_paths[i]));
 		TEST_ASSERT_EQUAL(TUF_ERROR_HASH_VERIFY_ERROR, test_refresh_from_path(sha_paths[i], reference_time));
 	}
@@ -585,7 +582,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 		TUF_TEST_FILES_PATH "/error_sig_targets",
 	};
 
-	for (int i=0; i<sizeof(sig_paths) / sizeof(sig_paths[0]); i++) {
+	for (size_t i=0; i<sizeof(sig_paths) / sizeof(sig_paths[0]); i++) {
 		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, sig_paths[i]));
 		TEST_ASSERT_EQUAL(TUF_ERROR_UNSIGNED_METADATA, test_refresh_from_path(sig_paths[i], reference_time));
 	}
@@ -595,7 +592,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 		TUF_TEST_FILES_PATH "/error_version_root_2",
 	};
 
-	for (int i=0; i<sizeof(version_paths) / sizeof(version_paths[0]); i++) {
+	for (size_t i=0; i<sizeof(version_paths) / sizeof(version_paths[0]); i++) {
 		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, version_paths[i]));
 		TEST_ASSERT_EQUAL(TUF_ERROR_BAD_VERSION_NUMBER, test_refresh_from_path(version_paths[i], reference_time));
 	}
@@ -605,7 +602,7 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 		TUF_TEST_FILES_PATH "/rsa",
 	};
 
-	for (int i=0; i<sizeof(ok_paths) / sizeof(ok_paths[0]); i++) {
+	for (size_t i=0; i<sizeof(ok_paths) / sizeof(ok_paths[0]); i++) {
 		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, ok_paths[i]));
 		TEST_ASSERT_EQUAL(TUF_ERROR_EXPIRED_METADATA, test_refresh_from_path(ok_paths[i], future_reference_time));
 	}

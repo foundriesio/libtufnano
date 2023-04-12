@@ -28,7 +28,7 @@
 /* Emulate files download */
 #define TUF_REMOTE_FILES_PATH "../test/sample_jsons/rsa"
 
-#define MAX_FILE_PATH_LEN 150
+#define MAX_FILE_PATH_LEN 250
 
 /* Platform specific code */
 time_t get_current_gmt_time()
@@ -45,7 +45,7 @@ time_t get_current_gmt_time()
 }
 
 /* read_file function */
-size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit, const char *base_path, size_t *file_size)
+size_t read_file_posix(const char *base_name, unsigned char *output_buffer, size_t limit, const char *base_path, size_t *file_size)
 {
 	char file_path[MAX_FILE_PATH_LEN];
 	FILE *f;
@@ -70,7 +70,7 @@ size_t read_file_posix(const char *base_name, char *output_buffer, size_t limit,
 	return TUF_SUCCESS;
 }
 
-size_t write_file_posix(const char *base_name, const char *data, size_t len, const char *base_path)
+size_t write_file_posix(const char *base_name, const unsigned char *data, size_t len, const char *base_path)
 {
 	char file_path[MAX_FILE_PATH_LEN];
 	size_t ret;
