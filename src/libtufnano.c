@@ -325,13 +325,13 @@ static int split_metadata(const unsigned char *data, size_t len, struct tuf_sign
 	int ret;
 
 	if (len <= 0 || len > updater.data_buffer_len) {
-		log_error(("split_metadata: Got invalid JSON len=%d", len));
+		log_error(("split_metadata: Got invalid JSON len=%zu", len));
 		return -EINVAL;
 	}
 
 	result = JSON_Validate((const char *)data, len);
 	if (result != JSONSuccess) {
-		log_error(("split_metadata: Got invalid JSON with len=%d ret=%d: %.*s", len, result, len, data));
+		log_error(("split_metadata: Got invalid JSON with len=%zu ret=%d: %.*s", len, result, (int)len, data));
 		return TUF_ERROR_INVALID_METADATA;
 	}
 
@@ -522,8 +522,7 @@ static int verify_signature_rsa(const unsigned char *data, int data_len, unsigne
 	if ((ret = mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, hash, 0,
 				     signature_bytes, signature_bytes_len)) != 0) {
 		log_error(("verify_signature: failed  ! mbedtls_pk_verify returned 0x%04X", -ret));
-		log_error(("verify_signature: sig data=%.*s", 150, data));
-		log_error((""));
+		log_error(("verify_signature: sig data=%.*s\n", 150, data));
 		log_error(("verify_signature: sig data+150=%s", data + 150));
 		log_error(("verify_signature: strlen=%ld data_len=%d", strlen((const char *)data), data_len));
 		exit_code = ret;
@@ -549,7 +548,7 @@ static int verify_signature_ed25519(const unsigned char *data, size_t data_len, 
 	size_t key_len = strnlen(key->keyval, sizeof(key->keyval));
 
 	if (key_len != 64) {
-		log_error(("Incorrect key length for ed25519: %d", key_len));
+		log_error(("Incorrect key length for ed25519: %zu", key_len));
 		return TUF_ERROR_UNSIGNED_METADATA;
 	}
 
