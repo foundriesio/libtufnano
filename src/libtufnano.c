@@ -818,7 +818,7 @@ static int parse_tuf_file_info(const char *data, size_t len, struct tuf_role_fil
 		log_error(("parse_timestamp_signed_metadata: \"length\" not found"));
 		return TUF_ERROR_FIELD_MISSING;
 	}
-	sscanf(out_value, "%zu", &target->length);
+	sscanf(out_value, "%lu", (unsigned long int*)&target->length);
 
 	result = JSON_SearchConst(data, len, "version", strlen("version"), &out_value, &out_value_len, NULL);
 	if (result != JSONSuccess) {
