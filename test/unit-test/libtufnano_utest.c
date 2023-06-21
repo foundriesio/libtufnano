@@ -240,7 +240,16 @@ TEST_GROUP_RUNNER(Full_LibTufNAno){
 	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestSha256);
 	// RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestFullLoadRootOperation);
 	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestRefreshOK);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestRefreshEllipticCurveOK);
 	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestRefreshErrors);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestBasicFunctions);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestFinalTimestamp);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestFinalSnapshot);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestRoleCheckingFunctions);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestSplitMetadata);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestParseBaseMetadata);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestParseTufInfo);
+	RUN_TEST_CASE(Full_LibTufNAno, libTufNano_TestUpdateSnapshot);
 }
 
 TEST(Full_LibTufNAno, libTufNano_TestTimestampSignature){
@@ -485,6 +494,7 @@ TEST(Full_LibTufNAno, libTufNano_TestSnapshotLoadWithoutTimestamp){
 
 	ret = parse_snapshot("snapshot.json", true);
 	TEST_ASSERT_EQUAL(TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED", tuf_get_error_string(ret));
 }
 
 TEST(Full_LibTufNAno, libTufNano_TestSnapshotLoad){
@@ -511,7 +521,340 @@ TEST(Full_LibTufNAno, libTufNano_TestSha256){
 
 	ret = verify_file_hash("timestamp.json", "targets.json.sha256");
 	TEST_ASSERT_EQUAL(TUF_ERROR_HASH_VERIFY_ERROR, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_HASH_VERIFY_ERROR", tuf_get_error_string(ret));
 }
+
+TEST(Full_LibTufNAno, libTufNano_TestBasicFunctions){
+	time_t epoch;
+	int ret;
+	uint8_t dst[100];
+
+	ret = datetime_string_to_epoch("2023-01-30T12:05:06Z", &epoch);
+	TEST_ASSERT_EQUAL(1675080306, epoch);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+
+	ret = datetime_string_to_epoch("2023-00-30T12:05:06Z", &epoch);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_DATE_TIME, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_INVALID_DATE_TIME", tuf_get_error_string(ret));
+
+	ret = datetime_string_to_epoch("1960-01-30T12:05:06Z", &epoch);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_DATE_TIME, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_INVALID_DATE_TIME", tuf_get_error_string(ret));
+
+	ret = hex_to_bin("0123456789abcdefABCDEF", dst, 11);
+	TEST_ASSERT_EQUAL(0, ret);
+
+	ret = hex_to_bin("\01\01", dst, 1);
+	TEST_ASSERT_EQUAL(-1, ret);
+
+	ret = hex_to_bin("GG", dst, 1);
+	TEST_ASSERT_EQUAL(-1, ret);
+
+	ret = hex_to_bin("gg", dst, 1);
+	TEST_ASSERT_EQUAL(-1, ret);
+
+	enum tuf_role role = role_string_to_enum("INVALID", strlen("INVALID"));
+	TEST_ASSERT_EQUAL(TUF_ROLES_COUNT, role);
+
+	const char *role_name = tuf_get_role_name(TUF_ROLES_COUNT);
+	TEST_ASSERT_EQUAL_STRING("", role_name);
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestRoleCheckingFunctions){
+	int ret;
+	unsigned char *sha256;
+	unsigned char buf[TUF_HASH256_LEN];
+	size_t length;
+
+	sha256 = buf;
+	memset(&updater, 0, sizeof(updater));
+
+	updater.snapshot.loaded = true;
+	updater.timestamp.loaded = false;
+	ret = get_expected_sha256_and_length_for_role(ROLE_SNAPSHOT, &sha256, &length);
+	TEST_ASSERT_EQUAL(TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED", tuf_get_error_string(ret));
+
+	updater.snapshot.loaded = false;
+	updater.timestamp.loaded = true;
+	ret = get_expected_sha256_and_length_for_role(ROLE_TARGETS, &sha256, &length);
+	TEST_ASSERT_EQUAL(TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_SNAPSHOT_ROLE_NOT_LOADED", tuf_get_error_string(ret));
+
+	ret = get_expected_sha256_and_length_for_role(ROLE_ROOT, &sha256, &length);
+	TEST_ASSERT_EQUAL(-EINVAL, ret);
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestParseTufInfo){
+	struct tuf_role_file role_file;
+	int ret;
+	char *data;
+	unsigned char hash[TUF_HASH256_LEN];
+
+	ret = hex_to_bin("3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af", hash, sizeof(hash));
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+
+	memset(&role_file, 0, sizeof(role_file));
+	data = "{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}";
+	ret = parse_tuf_file_info(data, strlen(data), &role_file);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+	TEST_ASSERT_EQUAL(true, role_file.loaded);
+	TEST_ASSERT_EQUAL(428, role_file.length);
+	TEST_ASSERT_EQUAL(1038, role_file.version);
+	TEST_ASSERT_EQUAL_CHAR_ARRAY(hash, role_file.hash_sha256, sizeof(hash));
+
+	/* typo in "hashes" */
+	memset(&role_file, 0, sizeof(role_file));
+	data = "{\"hashes_\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}";
+	ret = parse_tuf_file_info(data, strlen(data), &role_file);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_FIELD_MISSING", tuf_get_error_string(ret));
+	TEST_ASSERT_EQUAL(false, role_file.loaded);
+
+	/* SHA256 hash too big */
+	memset(&role_file, 0, sizeof(role_file));
+	data = "{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af00\"},\"length\":428,\"version\":1038}";
+	ret = parse_tuf_file_info(data, strlen(data), &role_file);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_FIELD_VALUE, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_INVALID_FIELD_VALUE", tuf_get_error_string(ret));
+	TEST_ASSERT_EQUAL(false, role_file.loaded);
+
+	/* typo in "length" */
+	memset(&role_file, 0, sizeof(role_file));
+	data = "{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length_\":428,\"version\":1038}";
+	ret = parse_tuf_file_info(data, strlen(data), &role_file);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+	TEST_ASSERT_EQUAL(false, role_file.loaded);
+
+	/* typo in "version" */
+	memset(&role_file, 0, sizeof(role_file));
+	data = "{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version_\":1038}";
+	ret = parse_tuf_file_info(data, strlen(data), &role_file);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+	TEST_ASSERT_EQUAL(false, role_file.loaded);
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestParseBaseMetadata) {
+	int ret;
+	char *data;
+	struct tuf_metadata metadata_base;
+
+	memset(&metadata_base, 0, sizeof(metadata_base));
+	data = "{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}";
+	ret = parse_base_metadata(data, strlen(data), ROLE_TIMESTAMP, &metadata_base);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+
+	/* Typo in "_type" */
+	memset(&metadata_base, 0, sizeof(metadata_base));
+	data = "{\"_type__\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}";
+	ret = parse_base_metadata(data, strlen(data), ROLE_TIMESTAMP, &metadata_base);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_TYPE, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_INVALID_TYPE", tuf_get_error_string(ret));
+
+	/* Wrong "_type" */
+	memset(&metadata_base, 0, sizeof(metadata_base));
+	data = "{\"_type\":\"Root\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}";
+	ret = parse_base_metadata(data, strlen(data), ROLE_TIMESTAMP, &metadata_base);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_TYPE, ret);
+
+	/* Typo in "version" */
+	memset(&metadata_base, 0, sizeof(metadata_base));
+	data = "{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version__\":1038}";
+	ret = parse_base_metadata(data, strlen(data), ROLE_TIMESTAMP, &metadata_base);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+
+	/* Typo in "expires" */
+	memset(&metadata_base, 0, sizeof(metadata_base));
+	data = "{\"_type\":\"Timestamp\",\"expires__\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}";
+	ret = parse_base_metadata(data, strlen(data), ROLE_TIMESTAMP, &metadata_base);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+
+	/* Invalid "expires" value */
+	memset(&metadata_base, 0, sizeof(metadata_base));
+	data = "{\"_type\":\"Timestamp\",\"expires\":\"1960-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}";
+	ret = parse_base_metadata(data, strlen(data), ROLE_TIMESTAMP, &metadata_base);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_DATE_TIME, ret);
+}
+
+
+TEST(Full_LibTufNAno, libTufNano_TestSplitMetadata) {
+	int ret;
+	char *data;
+	struct tuf_signature signatures[TUF_SIGNATURES_PER_ROLE_MAX_COUNT];
+	const unsigned char *signed_value;
+	int signed_value_len;
+
+	memset(&signatures[0], 0, sizeof(signatures[0]));
+	memset(&signatures[1], 0, sizeof(signatures[1]));
+	data = "{\"signatures\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519\",\"sig\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+	TEST_ASSERT_EQUAL(211, signed_value_len);
+	TEST_ASSERT_EQUAL(true, signatures[0].set);
+	TEST_ASSERT_EQUAL(false, signatures[1].set);
+
+	/* Invalid data with size 0 */
+	data = "";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(-EINVAL, ret);
+
+	/* data buffer too small (1 > 0) */
+	memset(&updater, 0, sizeof(updater));
+	data = " ";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(-EINVAL, ret);
+
+	/* Invalid JSON */
+	updater.data_buffer_len = 1000;
+	data = " ";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_METADATA, ret);
+
+	/* Typo in "signatures" */
+	data = "{\"signatures_\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519\",\"sig\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+
+	/* More signatures than supported (limit = 0) */
+	data = "{\"signatures\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519\",\"sig\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, 0, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_COUNT_EXCEEDED, ret);
+
+	/* Typo in "keyid" */
+	data = "{\"signatures\":[{\"keyid_\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519\",\"sig\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+
+	/* Typo in "method" */
+	data = "{\"signatures\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method_\":\"ed25519\",\"sig\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+
+	/* Invalid signature method */
+	memset(&signatures[0], 0, sizeof(signatures[0]));
+	memset(&signatures[1], 0, sizeof(signatures[1]));
+	data = "{\"signatures\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519_\",\"sig\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+	TEST_ASSERT_EQUAL(false, signatures[0].set);
+
+	/* Typo in "sig" */
+	data = "{\"signatures\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519\",\"sig_\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+
+	/* Typo in "signed" */
+	data = "{\"signatures\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519\",\"sig\":\"QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed_\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+
+	/* Invalid base64 in "sig" value */
+	data = "{\"signatures\":[{\"keyid\":\"9f3295f7859ecc152b7fd6b43e835b02f9970406c00b813a110eeb1cb3b1eb2c\",\"method\":\"ed25519\",\"sig\":\"_QUxG74vV95XhXeWfKWTStKddlkq9onIzNFwxOUv9gwXnanudlw2Ik4Pxg/lqO2PFA/12KdS6Xkeqkj17HUKjCQ==\"}],\"signed_\":{\"_type\":\"Timestamp\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"snapshot.json\":{\"hashes\":{\"sha256\":\"3a14dab22c54c8c00a490ffb8535ee1b11a9606f46e610e54871d445eba3d3af\"},\"length\":428,\"version\":1038}},\"version\":1038}}";
+	ret = split_metadata((unsigned char*)data, strlen(data), signatures, TUF_SIGNATURES_PER_ROLE_MAX_COUNT, &signed_value, &signed_value_len);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_FIELD_VALUE, ret);
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestFinalTimestamp){
+	int ret;
+
+	memset(&updater, 0, sizeof(updater));
+
+	updater.snapshot.loaded = true;
+	updater.timestamp.loaded = false;
+	ret = check_final_timestamp();
+	TEST_ASSERT_EQUAL(TUF_ERROR_BUG, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_BUG", tuf_get_error_string(TUF_ERROR_BUG));
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestFinalSnapshot){
+	int ret;
+
+	memset(&updater, 0, sizeof(updater));
+
+	updater.snapshot.loaded = true;
+	updater.timestamp.loaded = false;
+	ret = check_final_snapshot();
+	TEST_ASSERT_EQUAL(TUF_ERROR_BUG, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_BUG", tuf_get_error_string(TUF_ERROR_BUG));
+
+	updater.snapshot.loaded = false;
+	updater.timestamp.loaded = true;
+	ret = check_final_snapshot();
+	TEST_ASSERT_EQUAL(TUF_ERROR_BUG, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_BUG", tuf_get_error_string(TUF_ERROR_BUG));
+
+	updater.snapshot.loaded = true;
+	updater.timestamp.loaded = true;
+	updater.snapshot.base.expires_epoch = 1612178442; /* February 1, 2021 8:20:42 AM */
+	updater.reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
+	ret = check_final_snapshot();
+	TEST_ASSERT_EQUAL(TUF_ERROR_EXPIRED_METADATA, ret);
+
+	updater.snapshot.loaded = true;
+	updater.timestamp.loaded = true;
+	updater.snapshot.base.expires_epoch = 1662678443; /* September 8, 2022 11:07:23 PM */
+	updater.reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
+	updater.snapshot.base.version = 1;
+	updater.timestamp.snapshot_file.version = 2;
+	ret = check_final_snapshot();
+	TEST_ASSERT_EQUAL(TUF_ERROR_BAD_VERSION_NUMBER, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_BAD_VERSION_NUMBER", tuf_get_error_string(ret));
+}
+
+
+TEST(Full_LibTufNAno, libTufNano_TestUpdateSnapshot){
+	int ret;
+	unsigned char buffer[1000];
+	char *json = "";
+
+	memset(&updater, 0, sizeof(updater));
+	updater.data_buffer_len = sizeof(buffer);
+	updater.data_buffer = buffer;
+	updater.timestamp.loaded = true;
+	updater.timestamp.snapshot_file.version = 1038;
+	json = "{\"signatures\":[{\"keyid\":\"5ea2e62cebe20bca3b9cf381a87495a4a4350bb7e05bb40620fb79ff17741910\",\"method\":\"ed25519\",\"sig\":\"kOiJ0no3m0nccLkjWMcyBiyvRYMs0vHTSzkLtVP4Opg/ed7YtWZe5L/temi2meFHTR+SxPPZ8BQh0lXc9JVxCA==\"}],\"signed\":{\"_type\":\"Snapshot\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"targets.json\":{\"hashes\":{\"sha256\":\"baa2025c3723e6e9b11c67e8a854cf687e9f5b9170d8623aa3a5ac2d320bed0a\"},\"length\":299,\"version\":1038}},\"version\":1038}}";
+	ret = update_snapshot((unsigned char*)json, strlen(json), false);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+
+	memset(&updater, 0, sizeof(updater));
+	ret = update_snapshot((unsigned char*)json, strlen(json), false);
+	TEST_ASSERT_EQUAL(TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_TIMESTAMP_ROLE_NOT_LOADED", tuf_get_error_string(ret));
+
+	updater.timestamp.loaded = true;
+	updater.targets.loaded = true;
+	ret = update_snapshot((unsigned char*)json, strlen(json), false);
+	TEST_ASSERT_EQUAL(TUF_ERROR_TARGETS_ROLE_LOADED, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_TARGETS_ROLE_LOADED", tuf_get_error_string(ret));
+
+	updater.data_buffer_len = sizeof(buffer);
+	updater.data_buffer = buffer;
+	updater.timestamp.loaded = true;
+	updater.targets.loaded = false;
+	json = " ";
+	ret = update_snapshot((unsigned char*)json, strlen(json), false);
+	TEST_ASSERT_EQUAL(TUF_ERROR_INVALID_METADATA, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_INVALID_METADATA", tuf_get_error_string(ret));
+
+	json = "{}";
+	ret = update_snapshot((unsigned char*)json, strlen(json), false);
+	TEST_ASSERT_EQUAL(TUF_ERROR_FIELD_MISSING, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_FIELD_MISSING", tuf_get_error_string(ret));
+
+	/* Check "Prevent rollback of targets version" */
+	memset(&updater, 0, sizeof(updater));
+	updater.data_buffer_len = sizeof(buffer);
+	updater.data_buffer = buffer;
+	updater.timestamp.loaded = true;
+	updater.timestamp.snapshot_file.version = 1038;
+	updater.snapshot.loaded = true;
+	updater.snapshot.targets_file.version = 1039;
+	json = "{\"signatures\":[{\"keyid\":\"5ea2e62cebe20bca3b9cf381a87495a4a4350bb7e05bb40620fb79ff17741910\",\"method\":\"ed25519\",\"sig\":\"kOiJ0no3m0nccLkjWMcyBiyvRYMs0vHTSzkLtVP4Opg/ed7YtWZe5L/temi2meFHTR+SxPPZ8BQh0lXc9JVxCA==\"}],\"signed\":{\"_type\":\"Snapshot\",\"expires\":\"2023-07-21T02:49:21Z\",\"meta\":{\"targets.json\":{\"hashes\":{\"sha256\":\"baa2025c3723e6e9b11c67e8a854cf687e9f5b9170d8623aa3a5ac2d320bed0a\"},\"length\":299,\"version\":1038}},\"version\":1038}}";
+	ret = update_snapshot((unsigned char*)json, strlen(json), false);
+	TEST_ASSERT_EQUAL(TUF_ERROR_BAD_VERSION_NUMBER, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_ERROR_BAD_VERSION_NUMBER", tuf_get_error_string(ret));
+}
+
 
 // TEST(Full_LibTufNAno, libTufNano_TestFullLoadRootOperation){
 	// int ret;
@@ -531,12 +874,11 @@ static int remove_all_local_role_files(const char *path)
 	return TUF_SUCCESS;
 }
 
-static int test_refresh_from_path(const char *remote_path, time_t reference_time) {
+static int test_refresh_from_path_cust_prov(const char *remote_path, const char *prov_path, time_t reference_time) {
 	int ret;
 	size_t data_buffer_len;
 	unsigned char *data_buffer;
 	/* on an actual implementation, get_current_gmt_time() would be used */
-	const char *prov_path = "../test/provisioning";
 	const char *local_path = "../test/nvs";
 
 	remove_all_local_role_files(local_path);
@@ -551,16 +893,32 @@ static int test_refresh_from_path(const char *remote_path, time_t reference_time
 	return ret;
 }
 
+
+static int test_refresh_from_path(const char *remote_path, time_t reference_time) {
+	return test_refresh_from_path_cust_prov(remote_path, "../test/provisioning/rsa", reference_time);
+}
+
 TEST(Full_LibTufNAno, libTufNano_TestRefreshOK)
 {
 	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
-	TEST_ASSERT_EQUAL(TUF_SUCCESS, test_refresh_from_path(TUF_TEST_FILES_PATH "/rsa", reference_time));
+	int ret = test_refresh_from_path(TUF_TEST_FILES_PATH "/rsa", reference_time);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_SUCCESS", tuf_get_error_string(ret));
+}
+
+TEST(Full_LibTufNAno, libTufNano_TestRefreshEllipticCurveOK)
+{
+	time_t reference_time = 1687356253; /*  June 21, 2023 2:04:13 PM */
+	int ret = test_refresh_from_path_cust_prov(TUF_TEST_FILES_PATH "/ed25519", "../test/provisioning/ed25519", reference_time);
+	TEST_ASSERT_EQUAL(TUF_SUCCESS, ret);
+	TEST_ASSERT_EQUAL_STRING("TUF_SUCCESS", tuf_get_error_string(ret));
 }
 
 TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 {
 	time_t reference_time = 1662678442; /* September 8, 2022 11:07:22 PM */
 	time_t future_reference_time = 1663351215; /* Fri, 16 Sep 2022 18:00:15 GMT */
+	int ret;
 
 	/* Test hash errors */
 	const char *sha_paths[] = {
@@ -570,7 +928,9 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	for (size_t i=0; i<sizeof(sha_paths) / sizeof(sha_paths[0]); i++) {
 		log_info(("\nTesting '%s'...", sha_paths[i]));
-		TEST_ASSERT_EQUAL(TUF_ERROR_HASH_VERIFY_ERROR, test_refresh_from_path(sha_paths[i], reference_time));
+		ret = test_refresh_from_path(sha_paths[i], reference_time);
+		TEST_ASSERT_EQUAL(TUF_ERROR_HASH_VERIFY_ERROR, ret);
+		TEST_ASSERT_EQUAL_STRING("TUF_ERROR_HASH_VERIFY_ERROR", tuf_get_error_string(ret));
 	}
 
 	/* Test signature errors (hashes are OK) */
@@ -584,7 +944,9 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	for (size_t i=0; i<sizeof(sig_paths) / sizeof(sig_paths[0]); i++) {
 		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, sig_paths[i]));
-		TEST_ASSERT_EQUAL(TUF_ERROR_UNSIGNED_METADATA, test_refresh_from_path(sig_paths[i], reference_time));
+		ret = test_refresh_from_path(sig_paths[i], reference_time);
+		TEST_ASSERT_EQUAL(TUF_ERROR_UNSIGNED_METADATA, ret);
+		TEST_ASSERT_EQUAL_STRING("TUF_ERROR_UNSIGNED_METADATA", tuf_get_error_string(ret));
 	}
 
 	/* Test version errors */
@@ -594,7 +956,9 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	for (size_t i=0; i<sizeof(version_paths) / sizeof(version_paths[0]); i++) {
 		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, version_paths[i]));
-		TEST_ASSERT_EQUAL(TUF_ERROR_BAD_VERSION_NUMBER, test_refresh_from_path(version_paths[i], reference_time));
+		ret = test_refresh_from_path(version_paths[i], reference_time);
+		TEST_ASSERT_EQUAL(TUF_ERROR_BAD_VERSION_NUMBER, ret);
+		TEST_ASSERT_EQUAL_STRING("TUF_ERROR_BAD_VERSION_NUMBER", tuf_get_error_string(ret));
 	}
 
 	/* Test expiration errors */
@@ -604,7 +968,9 @@ TEST(Full_LibTufNAno, libTufNano_TestRefreshErrors)
 
 	for (size_t i=0; i<sizeof(ok_paths) / sizeof(ok_paths[0]); i++) {
 		log_info((ANSI_COLOR_YELLOW "\nTesting '%s'..." ANSI_COLOR_RESET, ok_paths[i]));
-		TEST_ASSERT_EQUAL(TUF_ERROR_EXPIRED_METADATA, test_refresh_from_path(ok_paths[i], future_reference_time));
+		ret = test_refresh_from_path(ok_paths[i], future_reference_time);
+		TEST_ASSERT_EQUAL(TUF_ERROR_EXPIRED_METADATA, ret);
+		TEST_ASSERT_EQUAL_STRING("TUF_ERROR_EXPIRED_METADATA", tuf_get_error_string(ret));
 	}
 }
 
