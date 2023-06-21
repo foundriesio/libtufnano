@@ -87,7 +87,7 @@ const char *tuf_get_error_string(int error)
 }
 
 /**/
-static time_t datetime_string_to_epoch(const char *s, time_t *epoch)
+static int datetime_string_to_epoch(const char *s, time_t *epoch)
 {
 	struct tm tm;
 	char *ret;
