@@ -48,5 +48,5 @@ jobs:
       uses: FreeRTOS/CI-CD-Github-Actions/coverage-cop@main
       with:
           path: ./build/coverage.info
-          branch-coverage-min: 50
-          line-coverage-min: 60
+          branch-coverage-min: 70
+          line-coverage-min: 80
